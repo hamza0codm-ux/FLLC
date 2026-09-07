@@ -60,7 +60,7 @@ export default {
             .setColor('#F8D568')
             .setTitle('New Fruity Suggestion')
             .setDescription(
-                `<a:Loading:1546268064008642641> **Status** <a:Loading:1546268064008642641> Pending • <t:${Math.floor(createdAt / 1000)}:F>\n` +
+                `<a:Loading:1546268064008642641> **Status:** <a:Loading:1546268064008642641> Pending • <t:${Math.floor(createdAt / 1000)}:F>\n` +
                 `<:Apply:1329723672801316925> **Action by:** <a:Loading:1546268064008642641> Pending\n\n` +
                 `**From:** <@${interaction.user.id}>\n` +
                 `\`${escapeInlineCode(suggestionText)}\``
