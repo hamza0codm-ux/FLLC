@@ -62,7 +62,7 @@ export default {
             .setDescription(
                 'Have an idea, improvement, or suggestion for Fruity?\n' +
                 'We want to hear what you think.'
-                ' Submit your idea below and our Management team will review it.'
+                'Submit your idea below and our Management team will review it.'
             )
             .setImage(PANEL_IMAGE);
 
