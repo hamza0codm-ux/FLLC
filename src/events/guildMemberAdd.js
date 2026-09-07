@@ -102,6 +102,7 @@ export default {
                     } else {
 
                         const welcomeEmbed = new EmbedBuilder()
+                            .setColor(0xF8D568)
                             .setDescription(
                                 `${WAVE_EMOJI}  **Welcome to Fruity!**\n\n` +
                                 `We’re so excited to have you join us, make sure to check out all the essential channels to get the full experience!\n\n` +
