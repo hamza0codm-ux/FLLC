@@ -19,6 +19,7 @@ import {
   closeTicket,
   claimTicket,
   updateTicketPriority,
+  getUserTicketCount,
 } from '../services/ticket.js';
 
 import {
@@ -49,6 +50,12 @@ import {
 } from '../utils/ticket/ticketPermissions.js';
 
 
+/*
+|--------------------------------------------------------------------------
+| Guild Context
+|--------------------------------------------------------------------------
+*/
+
 async function ensureGuildContext(interaction) {
   if (interaction.inGuild()) {
     return true;
@@ -65,6 +72,12 @@ async function ensureGuildContext(interaction) {
   return false;
 }
 
+
+/*
+|--------------------------------------------------------------------------
+| Ticket Permission Check
+|--------------------------------------------------------------------------
+*/
 
 async function assertTicketPermission(
   interaction,
@@ -89,7 +102,9 @@ async function assertTicketPermission(
     const timeoutPromise =
       new Promise((_, reject) =>
         setTimeout(
-          () => reject(new Error('Timeout')),
+          () => reject(
+            new Error('Timeout')
+          ),
           timeoutMs
         )
       );
@@ -145,12 +160,74 @@ async function assertTicketPermission(
 
 /*
 |--------------------------------------------------------------------------
-| Ticket Panel + Type
+| Simple Ticket Permission Check
+|--------------------------------------------------------------------------
+*/
+
+async function ensureTicketPermission(
+  interaction,
+  client,
+  actionLabel,
+  options = {}
+) {
+  const {
+    allowTicketCreator = false,
+  } = options;
+
+  const context =
+    await getTicketPermissionContext({
+      client,
+      interaction,
+    });
+
+  if (!context.ticketData) {
+    await replyUserError(
+      interaction,
+      {
+        type: ErrorTypes.UNKNOWN,
+        message:
+          'This action can only be used in a valid ticket channel.',
+      }
+    );
+
+    return null;
+  }
+
+  const allowed = allowTicketCreator
+    ? context.canCloseTicket
+    : context.canManageTicket;
+
+  if (!allowed) {
+    const permissionMessage =
+      allowTicketCreator
+        ? 'You must have **Manage Channels**, the configured **Ticket Staff Role**, or be the **ticket creator**.'
+        : 'You must have **Manage Channels** or the configured **Ticket Staff Role**.';
+
+    await replyUserError(
+      interaction,
+      {
+        type: ErrorTypes.PERMISSION,
+        message:
+          `${permissionMessage}\n\nYou cannot ${actionLabel}.`,
+      }
+    );
+
+    return null;
+  }
+
+  return context;
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Get Ticket Panel + Ticket Type
 |--------------------------------------------------------------------------
 |
 | Dynamic imports are intentional.
-| They prevent the circular dependency between this handler and the
-| Normal/Merch ticket panel files.
+|
+| ticketButtons.js is imported by the ticket panel files, so importing
+| the panel files statically here can create a circular dependency.
 |--------------------------------------------------------------------------
 */
 
@@ -169,7 +246,9 @@ async function getTicketPanelAndType(
     return {
       panel: NORMAL_TICKET_CONFIG,
       ticketType:
-        getNormalTicketType(ticketTypeKey),
+        getNormalTicketType(
+          ticketTypeKey
+        ),
     };
   }
 
@@ -184,7 +263,9 @@ async function getTicketPanelAndType(
     return {
       panel: MERCH_TICKET_CONFIG,
       ticketType:
-        getMerchTicketType(ticketTypeKey),
+        getMerchTicketType(
+          ticketTypeKey
+        ),
     };
   }
 
@@ -211,10 +292,25 @@ const createTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Button arguments
+      |--------------------------------------------------------------------------
+      |
+      | Normal:
+      | create_ticket:normal:fruity_application
+      |
+      | Merch:
+      | create_ticket:merch:returns
+      |
+      */
 
       const panelKey = args?.[0];
       const ticketTypeKey = args?.[1];
@@ -258,9 +354,7 @@ const createTicketHandler = {
 
       /*
       |--------------------------------------------------------------------------
-      | Rate limit only.
-      |
-      | DO NOT query the database before showModal().
+      | Rate Limit
       |--------------------------------------------------------------------------
       */
 
@@ -287,6 +381,18 @@ const createTicketHandler = {
         return;
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | Ticket Creation Modal
+      |--------------------------------------------------------------------------
+      |
+      | Do not query the database here.
+      |
+      | The button interaction needs to open the modal immediately.
+      | Ticket-limit checking is performed when the modal is submitted.
+      |--------------------------------------------------------------------------
+      */
+
       const modal =
         new ModalBuilder()
           .setCustomId(
@@ -311,23 +417,26 @@ const createTicketHandler = {
           .setRequired(true)
           .setMaxLength(1000);
 
+      const actionRow =
+        new ActionRowBuilder()
+          .addComponents(
+            reasonInput
+          );
+
       modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          reasonInput
-        )
+        actionRow
       );
 
       /*
       |--------------------------------------------------------------------------
-      | Register the modal handler before showing the modal.
+      | Register Modal Handler
+      |--------------------------------------------------------------------------
       |
       | The button interaction and modal submission are separate Discord
-      | interactions. The modal submission is resolved through
-      | client.modals in interactionCreate.js.
+      | interactions.
       |
-      | This guarantees that create_ticket_modal exists even when the
-      | normal startup loader only registers button handlers.
-      |--------------------------------------------------------------------------
+      | interactionCreate.js resolves modal handlers through client.modals.
+      |
       */
 
       if (client?.modals?.set) {
@@ -379,18 +488,31 @@ const createTicketModalHandler = {
 
   async execute(
     interaction,
-    client,
-    args = []
+    client
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
 
-      const panelKey = args?.[0];
-      const ticketTypeKey = args?.[1];
+      /*
+      |--------------------------------------------------------------------------
+      | Read Panel + Ticket Type
+      |--------------------------------------------------------------------------
+      */
+
+      const parts =
+        interaction.customId.split(':');
+
+      const panelKey =
+        parts[1];
+
+      const ticketTypeKey =
+        parts[2];
 
       if (
         !panelKey ||
@@ -426,7 +548,7 @@ const createTicketModalHandler = {
 
       /*
       |--------------------------------------------------------------------------
-      | Defer the modal interaction.
+      | Defer
       |--------------------------------------------------------------------------
       */
 
@@ -445,7 +567,7 @@ const createTicketModalHandler = {
 
       /*
       |--------------------------------------------------------------------------
-      | Ticket limit
+      | Maximum Open Tickets
       |--------------------------------------------------------------------------
       */
 
@@ -459,12 +581,6 @@ const createTicketModalHandler = {
         Number(
           config?.maxTicketsPerUser
         ) || 3;
-
-      const {
-        getUserTicketCount,
-      } = await import(
-        '../services/ticket.js'
-      );
 
       const currentTicketCount =
         await getUserTicketCount(
@@ -485,7 +601,8 @@ const createTicketModalHandler = {
                 `You have reached the maximum number of open tickets (${maxTicketsPerUser}).\n\n` +
                 'Please close one of your existing tickets before creating a new one.\n\n' +
                 `**Current Tickets:** ${currentTicketCount}/${maxTicketsPerUser}`,
-              color: '#e74c3c',
+              color:
+                '#e74c3c',
             }),
           ],
         });
@@ -507,20 +624,19 @@ const createTicketModalHandler = {
           ?.trim() ||
         'No reason provided.';
 
-
       /*
       |--------------------------------------------------------------------------
       | CREATE TICKET
       |--------------------------------------------------------------------------
       |
-      | The ticket service expects positional arguments:
+      | services/ticket.js expects:
       |
       | createTicket(
       |   guild,
       |   member,
       |   categoryId,
       |   reason,
-      |   ticketNumber,
+      |   priority,
       |   options
       | )
       |
@@ -538,6 +654,7 @@ const createTicketModalHandler = {
         {
           panelType:
             panel.key ||
+            panel.id ||
             panelKey,
 
           ticketType:
@@ -571,6 +688,12 @@ const createTicketModalHandler = {
           'The ticket channel could not be created. Please try again.'
         );
       }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Success
+      |--------------------------------------------------------------------------
+      */
 
       await interaction.editReply({
         embeds: [
@@ -618,7 +741,9 @@ const closeTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -658,14 +783,15 @@ const closeTicketHandler = {
           .setMaxLength(1000);
 
       modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          reasonInput
-        )
+        new ActionRowBuilder()
+          .addComponents(
+            reasonInput
+          )
       );
 
       /*
       |--------------------------------------------------------------------------
-      | Register close modal handler before showing the modal.
+      | Register Close Modal Handler
       |--------------------------------------------------------------------------
       */
 
@@ -722,7 +848,9 @@ const closeTicketModalHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -836,7 +964,9 @@ const claimTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -897,6 +1027,20 @@ const claimTicketHandler = {
               'An error occurred while claiming the ticket.',
           }
         );
+      } else if (
+        interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'An error occurred while claiming the ticket.',
+          }
+        );
       }
     }
   },
@@ -907,6 +1051,15 @@ const claimTicketHandler = {
 |--------------------------------------------------------------------------
 | PRIORITY BUTTON
 |--------------------------------------------------------------------------
+|
+| Clicking Priority opens:
+|
+| ⚪ None
+| 🟢 Low
+| 🟡 Medium
+| 🔴 High
+| 🚨 Urgent
+|
 */
 
 const priorityTicketHandler = {
@@ -918,7 +1071,9 @@ const priorityTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -1004,8 +1159,11 @@ const priorityTicketHandler = {
         await replyUserError(
           interaction,
           {
-            type: ErrorTypes.UNKNOWN,
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
             message:
+              error?.userMessage ||
               'Could not open the priority menu.',
           }
         );
@@ -1030,7 +1188,9 @@ const unclaimTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -1089,8 +1249,25 @@ const unclaimTicketHandler = {
         await replyUserError(
           interaction,
           {
-            type: ErrorTypes.UNKNOWN,
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
             message:
+              error?.userMessage ||
+              'An error occurred while unclaiming the ticket.',
+          }
+        );
+      } else if (
+        interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
               'An error occurred while unclaiming the ticket.',
           }
         );
@@ -1115,7 +1292,9 @@ const reopenTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -1147,19 +1326,21 @@ const reopenTicketHandler = {
         '../services/ticket.js'
       );
 
-      const result =
-        await reopenTicket(
-          interaction.channel,
-          interaction.member
-        );
+      const {
+        movedToOpenCategory,
+        openCategoryMoveFailed,
+      } = await reopenTicket(
+        interaction.channel,
+        interaction.member
+      );
 
-      let message =
+      let reopenMessage =
         'This ticket has been reopened.';
 
       if (
-        result?.openCategoryMoveFailed
+        openCategoryMoveFailed
       ) {
-        message +=
+        reopenMessage +=
           ' Note: Could not move the channel back to the open tickets category.';
       }
 
@@ -1167,7 +1348,7 @@ const reopenTicketHandler = {
         embeds: [
           successEmbed(
             'Ticket Reopened',
-            message
+            reopenMessage
           ),
         ],
       });
@@ -1185,8 +1366,25 @@ const reopenTicketHandler = {
         await replyUserError(
           interaction,
           {
-            type: ErrorTypes.UNKNOWN,
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
             message:
+              error?.userMessage ||
+              'An error occurred while reopening the ticket.',
+          }
+        );
+      } else if (
+        interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
               'An error occurred while reopening the ticket.',
           }
         );
@@ -1211,7 +1409,9 @@ const deleteTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(interaction))
+        !(await ensureGuildContext(
+          interaction
+        ))
       ) {
         return;
       }
@@ -1270,7 +1470,23 @@ const deleteTicketHandler = {
         await replyUserError(
           interaction,
           {
-            type: ErrorTypes.UNKNOWN,
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'An error occurred while deleting the ticket.',
+          }
+        );
+      } else if (
+        interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
             message:
               error?.userMessage ||
               'An error occurred while deleting the ticket.',
