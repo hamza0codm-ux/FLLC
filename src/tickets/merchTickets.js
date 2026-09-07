@@ -139,7 +139,7 @@ export function buildMerchTicketPanel() {
     const ticketButton =
       new ButtonBuilder()
         .setCustomId(
-          `create_ticket:merch:${button.id}`
+          `create_ticket:merch:${button.key}`
         )
         .setLabel(button.label)
         .setStyle(ButtonStyle.Secondary)
