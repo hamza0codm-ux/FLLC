@@ -102,20 +102,22 @@ export default {
                     } else {
 
                         const welcomeEmbed = new EmbedBuilder()
-                            .setColor(0xF8D568)
-                            .setDescription(
-                                `${WAVE_EMOJI}  **Welcome to Fruity!**\n\n` +
-                                `We’re so excited to have you join us, make sure to check out all the essential channels to get the full experience!\n\n` +
-                                `${WELCOME_CHANNELS.join('\n')}\n\n` +
-                                `Hope you enjoy your stay here ${HEART_EMOJI}`
-                            )
-                            .setThumbnail(
-                                user.displayAvatarURL({
-                                    size: 256,
-                                })
-                            )
-                            .setTimestamp();
-
+    .setColor(0xF8D568)
+    .setDescription(
+        `${WAVE_EMOJI}  **Welcome to Fruity!**\n\n` +
+        `We’re so excited to have you join us, make sure to check out all the essential channels to get the full experience!\n\n` +
+        `${WELCOME_CHANNELS.join('\n')}\n\n` +
+        `Hope you enjoy your stay here ${HEART_EMOJI}`
+    )
+    .setImage(
+        'https://media.discordapp.net/attachments/1380169626171871282/1546404727732838480/FRUITY_WELCOME.jpg?ex=6a9fa921&is=6a9e57a1&hm=3a30f2e5e490e6d79a25a043bc02c17c91c97051c500e350e671dda07fa16a97&=&format=webp&width=2048&height=682'
+    )
+    .setThumbnail(
+        user.displayAvatarURL({
+            size: 256,
+        })
+    )
+    .setTimestamp();
                         await channel.send({
                             content: user.toString(),
                             embeds: [welcomeEmbed],
