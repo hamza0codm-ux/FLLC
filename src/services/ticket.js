@@ -2080,6 +2080,25 @@ export async function deleteTicket(
   }
 }
 
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| User Ticket Count
+|--------------------------------------------------------------------------
+*/
+
+export async function getUserTicketCount(
+  guildId,
+  userId
+) {
+  return await getOpenTicketCountForUser(
+    guildId,
+    userId
+  );
+}
+
 
 /*
 |--------------------------------------------------------------------------
