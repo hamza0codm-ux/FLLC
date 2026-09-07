@@ -9,6 +9,7 @@ import {
   MessageFlags,
   SectionBuilder,
   SeparatorBuilder,
+  SeparatorSpacingSize,
   TextDisplayBuilder,
 } from 'discord.js';
 
@@ -90,7 +91,7 @@ export function buildMerchTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | TITLE
+  | TITLE + DESCRIPTION
   |--------------------------------------------------------------------------
   */
 
@@ -102,7 +103,7 @@ export function buildMerchTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | TOP SEPARATOR
+  | TOP DIVIDER
   |--------------------------------------------------------------------------
   */
 
@@ -112,35 +113,18 @@ export function buildMerchTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | BANNER
+  | TICKET OPTIONS
   |--------------------------------------------------------------------------
   */
 
-  container.addMediaGalleryComponents(
-    new MediaGalleryBuilder().addItems(
-      new MediaGalleryItemBuilder().setURL(
-        MERCH_TICKET_CONFIG.image
-      )
-    )
-  );
+  for (
+    let i = 0;
+    i < MERCH_TICKET_CONFIG.buttons.length;
+    i++
+  ) {
+    const button =
+      MERCH_TICKET_CONFIG.buttons[i];
 
-  /*
-  |--------------------------------------------------------------------------
-  | SEPARATOR
-  |--------------------------------------------------------------------------
-  */
-
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | MERCH OPTIONS
-  |--------------------------------------------------------------------------
-  */
-
-  for (const button of MERCH_TICKET_CONFIG.buttons) {
     const ticketButton = new ButtonBuilder()
       .setCustomId(
         `create_ticket:merch:${button.key}`
@@ -159,10 +143,58 @@ export function buildMerchTicketPanel() {
 
     container.addSectionComponents(section);
 
-    container.addSeparatorComponents(
-      new SeparatorBuilder()
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | LARGE SPACING BETWEEN OPTIONS
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      i <
+      MERCH_TICKET_CONFIG.buttons.length - 1
+    ) {
+      container.addSeparatorComponents(
+        new SeparatorBuilder()
+          .setSpacing(
+            SeparatorSpacingSize.Large
+          )
+      );
+    }
   }
+
+  /*
+  |--------------------------------------------------------------------------
+  | DIVIDER BEFORE IMAGE
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | BANNER IMAGE
+  |--------------------------------------------------------------------------
+  */
+
+  container.addMediaGalleryComponents(
+    new MediaGalleryBuilder().addItems(
+      new MediaGalleryItemBuilder().setURL(
+        MERCH_TICKET_CONFIG.image
+      )
+    )
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | DIVIDER BEFORE FOOTER
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -217,11 +249,10 @@ function normalizeComponent(value) {
 function getMerchPanelStructure(
   messageOrComponents
 ) {
-  const components = Array.isArray(
-    messageOrComponents
-  )
-    ? messageOrComponents
-    : messageOrComponents?.components || [];
+  const components =
+    Array.isArray(messageOrComponents)
+      ? messageOrComponents
+      : messageOrComponents?.components || [];
 
   return normalizeComponent(
     components.map((component) => {
@@ -239,7 +270,7 @@ function getMerchPanelStructure(
 
 /*
 |--------------------------------------------------------------------------
-| CHECK FOR CHANGES
+| CHECK WHETHER PANEL CHANGED
 |--------------------------------------------------------------------------
 */
 
@@ -353,6 +384,7 @@ export async function reconcileMerchTicketPanel(
     return {
       created: true,
       changed: true,
+      replaced: false,
       messageId: message.id,
     };
   }
@@ -372,13 +404,14 @@ export async function reconcileMerchTicketPanel(
     return {
       created: false,
       changed: false,
+      replaced: false,
       messageId: existing.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | CONFIG CHANGED
+  | PANEL CHANGED
   |--------------------------------------------------------------------------
   |
   | Send a completely NEW message.
@@ -390,7 +423,7 @@ export async function reconcileMerchTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | DELETE OLD MESSAGE
+  | DELETE OLD PANEL
   |--------------------------------------------------------------------------
   */
 
