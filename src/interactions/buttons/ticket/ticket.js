@@ -7,62 +7,96 @@ import createTicketHandler, {
   deleteTicketHandler,
 } from '../../../handlers/ticketButtons.js';
 
+
 /*
 |--------------------------------------------------------------------------
-| Legacy ticket button compatibility
+| Legacy Normal Ticket Button
 |--------------------------------------------------------------------------
 |
-| Older Fruity ticket panels used:
+| Supports older panel buttons using:
 |
-| normal_ticket_create:<type>
-| merch_ticket_create:<type>
+| normal_ticket_create:<ticketType>
 |
-| The current handler uses:
-|
-| create_ticket:normal:<type>
-| create_ticket:merch:<type>
-|
-| These aliases keep already-existing Discord panels working without
-| requiring the panel message to be deleted or recreated.
-|
+|--------------------------------------------------------------------------
 */
 
 const normalTicketCreateLegacyHandler = {
   name: 'normal_ticket_create',
 
-  async execute(interaction, client, args = []) {
+  async execute(
+    interaction,
+    client,
+    args = []
+  ) {
     await createTicketHandler.execute(
       interaction,
       client,
-      ['normal', args[0]]
+      [
+        'normal',
+        args[0],
+      ]
     );
   },
 };
+
+
+/*
+|--------------------------------------------------------------------------
+| Legacy Merch Ticket Button
+|--------------------------------------------------------------------------
+|
+| Supports older panel buttons using:
+|
+| merch_ticket_create:<ticketType>
+|
+|--------------------------------------------------------------------------
+*/
 
 const merchTicketCreateLegacyHandler = {
   name: 'merch_ticket_create',
 
-  async execute(interaction, client, args = []) {
+  async execute(
+    interaction,
+    client,
+    args = []
+  ) {
     await createTicketHandler.execute(
       interaction,
       client,
-      ['merch', args[0]]
+      [
+        'merch',
+        args[0],
+      ]
     );
   },
 };
 
-export default [
-  /*
-  |--------------------------------------------------------------------------
-  | Current ticket system
-  |--------------------------------------------------------------------------
-  */
 
+/*
+|--------------------------------------------------------------------------
+| Ticket Button Handlers
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+|
+| The current panels use:
+|
+| create_ticket:normal:<type>
+| create_ticket:merch:<type>
+|
+| Therefore createTicketHandler MUST be registered with the name:
+|
+| create_ticket
+|
+|--------------------------------------------------------------------------
+*/
+
+export default [
   createTicketHandler,
 
   /*
   |--------------------------------------------------------------------------
-  | Legacy panel compatibility
+  | Legacy Create Buttons
   |--------------------------------------------------------------------------
   */
 
@@ -71,7 +105,7 @@ export default [
 
   /*
   |--------------------------------------------------------------------------
-  | Ticket controls
+  | Ticket Controls
   |--------------------------------------------------------------------------
   */
 
