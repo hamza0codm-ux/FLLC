@@ -18,13 +18,9 @@ const BRAND_COLOR = 0xF8D568;
 |--------------------------------------------------------------------------
 | MERCH TICKET PANEL CONFIG
 |--------------------------------------------------------------------------
-|
-| Edit the panel here.
-|
 */
 
 export const MERCH_TICKET_CONFIG = {
-
   key: 'merch',
 
   channelId: '1543031129559408660',
@@ -54,7 +50,6 @@ export const MERCH_TICKET_CONFIG = {
     'The Fruity Customer Service Team will assist you shortly,',
 
   buttons: [
-
     {
       key: 'returns',
       label: 'Returns',
@@ -81,9 +76,7 @@ export const MERCH_TICKET_CONFIG = {
       emoji:
         '<a:Package:1546271416436006942>',
     },
-
   ],
-
 };
 
 /*
@@ -93,12 +86,11 @@ export const MERCH_TICKET_CONFIG = {
 */
 
 export function buildMerchTicketPanel() {
-
   const container = new ContainerBuilder();
 
   /*
   |--------------------------------------------------------------------------
-  | TITLE + DESCRIPTION
+  | TITLE
   |--------------------------------------------------------------------------
   */
 
@@ -110,7 +102,7 @@ export function buildMerchTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | HEADER SEPARATOR
+  | TOP SEPARATOR
   |--------------------------------------------------------------------------
   */
 
@@ -134,7 +126,7 @@ export function buildMerchTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | BUTTON SEPARATOR
+  | SEPARATOR
   |--------------------------------------------------------------------------
   */
 
@@ -149,7 +141,6 @@ export function buildMerchTicketPanel() {
   */
 
   for (const button of MERCH_TICKET_CONFIG.buttons) {
-
     const ticketButton = new ButtonBuilder()
       .setCustomId(
         `create_ticket:merch:${button.key}`
@@ -161,7 +152,7 @@ export function buildMerchTicketPanel() {
     const section = new SectionBuilder()
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `**${button.label}**\n${button.description}`
+          `### ${button.emoji} ${button.label}\n${button.description}`
         )
       )
       .setButtonAccessory(ticketButton);
@@ -190,12 +181,11 @@ export function buildMerchTicketPanel() {
 
 /*
 |--------------------------------------------------------------------------
-| MERCH PANEL COMPONENT NORMALIZER
+| NORMALIZE COMPONENTS
 |--------------------------------------------------------------------------
 */
 
 function normalizeComponent(value) {
-
   if (Array.isArray(value)) {
     return value.map(normalizeComponent);
   }
@@ -207,7 +197,6 @@ function normalizeComponent(value) {
   const normalized = {};
 
   for (const [key, item] of Object.entries(value)) {
-
     if (key === 'id') {
       continue;
     }
@@ -228,20 +217,18 @@ function normalizeComponent(value) {
 function getMerchPanelStructure(
   messageOrComponents
 ) {
-
-  const components =
-    Array.isArray(messageOrComponents)
-      ? messageOrComponents
-      : messageOrComponents?.components || [];
+  const components = Array.isArray(
+    messageOrComponents
+  )
+    ? messageOrComponents
+    : messageOrComponents?.components || [];
 
   return normalizeComponent(
     components.map((component) => {
-
       if (
         typeof component?.toJSON ===
         'function'
       ) {
-
         return component.toJSON();
       }
 
@@ -252,7 +239,7 @@ function getMerchPanelStructure(
 
 /*
 |--------------------------------------------------------------------------
-| CHECK IF PANEL CHANGED
+| CHECK FOR CHANGES
 |--------------------------------------------------------------------------
 */
 
@@ -260,7 +247,6 @@ function merchPanelChanged(
   existingMessage,
   newComponents
 ) {
-
   const existingStructure =
     getMerchPanelStructure(
       existingMessage.components
@@ -281,15 +267,10 @@ function merchPanelChanged(
 |--------------------------------------------------------------------------
 | FIND EXISTING MERCH PANEL
 |--------------------------------------------------------------------------
-|
-| Only find OUR Merch ticket panel.
-|
 */
 
 async function findMerchPanelMessage(channel) {
-
   try {
-
     const messages =
       await channel.messages.fetch({
         limit: 50,
@@ -297,7 +278,6 @@ async function findMerchPanelMessage(channel) {
 
     return (
       messages.find((message) => {
-
         if (
           message.author?.id !==
           channel.client.user.id
@@ -320,12 +300,9 @@ async function findMerchPanelMessage(channel) {
         return json.includes(
           'create_ticket:merch:'
         );
-
       }) || null
     );
-
   } catch {
-
     return null;
   }
 }
@@ -336,8 +313,9 @@ async function findMerchPanelMessage(channel) {
 |--------------------------------------------------------------------------
 */
 
-export async function reconcileMerchTicketPanel(client) {
-
+export async function reconcileMerchTicketPanel(
+  client
+) {
   const channel =
     await client.channels
       .fetch(
@@ -346,7 +324,6 @@ export async function reconcileMerchTicketPanel(client) {
       .catch(() => null);
 
   if (!channel?.isTextBased()) {
-
     throw new Error(
       `Merch ticket panel channel ${MERCH_TICKET_CONFIG.channelId} was not found.`
     );
@@ -356,12 +333,8 @@ export async function reconcileMerchTicketPanel(client) {
     buildMerchTicketPanel();
 
   const payload = {
-
     components,
-
-    flags:
-      MessageFlags.IsComponentsV2,
-
+    flags: MessageFlags.IsComponentsV2,
   };
 
   const existing =
@@ -369,23 +342,18 @@ export async function reconcileMerchTicketPanel(client) {
 
   /*
   |--------------------------------------------------------------------------
-  | NO EXISTING PANEL
+  | NO PANEL EXISTS
   |--------------------------------------------------------------------------
   */
 
   if (!existing) {
-
     const message =
       await channel.send(payload);
 
     return {
-
       created: true,
-
       changed: true,
-
       messageId: message.id,
-
     };
   }
 
@@ -401,24 +369,19 @@ export async function reconcileMerchTicketPanel(client) {
       components
     )
   ) {
-
     return {
-
       created: false,
-
       changed: false,
-
       messageId: existing.id,
-
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | PANEL CHANGED
+  | CONFIG CHANGED
   |--------------------------------------------------------------------------
   |
-  | Send a completely new message.
+  | Send a completely NEW message.
   |
   */
 
@@ -427,7 +390,7 @@ export async function reconcileMerchTicketPanel(client) {
 
   /*
   |--------------------------------------------------------------------------
-  | DELETE OLD PANEL
+  | DELETE OLD MESSAGE
   |--------------------------------------------------------------------------
   */
 
@@ -436,17 +399,11 @@ export async function reconcileMerchTicketPanel(client) {
     .catch(() => null);
 
   return {
-
     created: true,
-
     changed: true,
-
     replaced: true,
-
     oldMessageId: existing.id,
-
     messageId: newMessage.id,
-
   };
 }
 
@@ -456,8 +413,9 @@ export async function reconcileMerchTicketPanel(client) {
 |--------------------------------------------------------------------------
 */
 
-export function getMerchTicketType(ticketTypeKey) {
-
+export function getMerchTicketType(
+  ticketTypeKey
+) {
   return (
     MERCH_TICKET_CONFIG.buttons.find(
       (button) =>
