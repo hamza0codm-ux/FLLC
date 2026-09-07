@@ -1373,165 +1373,157 @@ export async function closeTicket(
 
 
     /*
+|--------------------------------------------------------------------------
+| Send Review DM to Ticket Creator
+|--------------------------------------------------------------------------
+*/
+
+try {
+  const ticketCreator =
+    await channel.client.users.fetch(
+      ticketData.userId
+    );
+
+  if (ticketCreator) {
+    const reviewEmbed =
+      createEmbed({
+        title:
+          'How was your support experience?',
+
+        description:
+          `We'd love to know how we did with **ticket-${String(ticketData.id).padStart(3, '0')}**.\n` +
+          'Select a rating below — it only takes a second!',
+
+        color:
+          0xF8D568,
+      });
+
+    /*
     |--------------------------------------------------------------------------
-    | Send Review DM to Ticket Creator
+    | Rating Buttons
     |--------------------------------------------------------------------------
     */
 
-    try {
-      const ticketCreator =
-        await channel.client.users.fetch(
-          ticketData.userId
+    const reviewRow =
+      new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(
+              `ticket_feedback:${channel.guild.id}:${channel.id}:1`
+            )
+            .setLabel('1')
+            .setEmoji('⭐')
+            .setStyle(
+              ButtonStyle.Secondary
+            ),
+
+          new ButtonBuilder()
+            .setCustomId(
+              `ticket_feedback:${channel.guild.id}:${channel.id}:2`
+            )
+            .setLabel('2')
+            .setEmoji('⭐')
+            .setStyle(
+              ButtonStyle.Secondary
+            ),
+
+          new ButtonBuilder()
+            .setCustomId(
+              `ticket_feedback:${channel.guild.id}:${channel.id}:3`
+            )
+            .setLabel('3')
+            .setEmoji('⭐')
+            .setStyle(
+              ButtonStyle.Secondary
+            ),
+
+          new ButtonBuilder()
+            .setCustomId(
+              `ticket_feedback:${channel.guild.id}:${channel.id}:4`
+            )
+            .setLabel('4')
+            .setEmoji('⭐')
+            .setStyle(
+              ButtonStyle.Secondary
+            ),
+
+          new ButtonBuilder()
+            .setCustomId(
+              `ticket_feedback:${channel.guild.id}:${channel.id}:5`
+            )
+            .setLabel('5')
+            .setEmoji('⭐')
+            .setStyle(
+              ButtonStyle.Secondary
+            )
         );
 
-      if (
-        ticketCreator
-      ) {
-        const reviewEmbed =
-          createEmbed({
-            title:
-              '⭐ How was your support experience?',
+    /*
+    |--------------------------------------------------------------------------
+    | Comment / Decline Buttons
+    |--------------------------------------------------------------------------
+    */
 
-            description:
-              `Your Fruity ticket **#${ticketData.id}** has been closed.\n\n` +
-              'We would really appreciate it if you could rate the support you received.\n\n' +
-              '**Please select a rating below:**',
+    const commentRow =
+      new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(
+              `ticket_feedback_comment:${channel.guild.id}:${channel.id}`
+            )
+            .setLabel(
+              'Add Comment'
+            )
+            .setEmoji('💅')
+            .setStyle(
+              ButtonStyle.Secondary
+            ),
 
-            color:
-              0xF8D568,
-
-            footer: {
-              text:
-                'Fruity Support • Your feedback helps us improve.',
-            },
-          });
-
-        const reviewRow =
-          new ActionRowBuilder()
-            .addComponents(
-              new ButtonBuilder()
-                .setCustomId(
-                  `ticket_feedback:${channel.guild.id}:${channel.id}:1`
-                )
-                .setLabel(
-                  '1'
-                )
-                .setEmoji('⭐')
-                .setStyle(
-                  ButtonStyle.Secondary
-                ),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  `ticket_feedback:${channel.guild.id}:${channel.id}:2`
-                )
-                .setLabel(
-                  '2'
-                )
-                .setEmoji('⭐')
-                .setStyle(
-                  ButtonStyle.Secondary
-                ),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  `ticket_feedback:${channel.guild.id}:${channel.id}:3`
-                )
-                .setLabel(
-                  '3'
-                )
-                .setEmoji('⭐')
-                .setStyle(
-                  ButtonStyle.Secondary
-                ),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  `ticket_feedback:${channel.guild.id}:${channel.id}:4`
-                )
-                .setLabel(
-                  '4'
-                )
-                .setEmoji('⭐')
-                .setStyle(
-                  ButtonStyle.Secondary
-                ),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  `ticket_feedback:${channel.guild.id}:${channel.id}:5`
-                )
-                .setLabel(
-                  '5'
-                )
-                .setEmoji('⭐')
-                .setStyle(
-                  ButtonStyle.Secondary
-                )
-            );
-
-        const commentRow =
-          new ActionRowBuilder()
-            .addComponents(
-              new ButtonBuilder()
-                .setCustomId(
-                  `ticket_feedback_comment:${channel.guild.id}:${channel.id}`
-                )
-                .setLabel(
-                  'Leave a Comment'
-                )
-                .setEmoji('💬')
-                .setStyle(
-                  ButtonStyle.Primary
-                ),
-
-              new ButtonBuilder()
-                .setCustomId(
-                  'ticket_feedback_decline'
-                )
-                .setLabel(
-                  'No Thanks'
-                )
-                .setEmoji('👋')
-                .setStyle(
-                  ButtonStyle.Secondary
-                )
-            );
-
-        await ticketCreator.send({
-          embeds: [
-            reviewEmbed,
-          ],
-
-          components: [
-            reviewRow,
-            commentRow,
-          ],
-        });
-
-        logger.info(
-          'Ticket review DM sent successfully',
-          {
-            channelId:
-              channel.id,
-
-            ticketNumber:
-              ticketData.ticketNumber ||
-              ticketData.id,
-
-            userId:
-              ticketData.userId,
-          }
+          new ButtonBuilder()
+            .setCustomId(
+              'ticket_feedback_decline'
+            )
+            .setLabel(
+              'No thanks'
+            )
+            .setEmoji('❌')
+            .setStyle(
+              ButtonStyle.Secondary
+            )
         );
+
+    await ticketCreator.send({
+      embeds: [
+        reviewEmbed,
+      ],
+
+      components: [
+        reviewRow,
+        commentRow,
+      ],
+    });
+
+    logger.info(
+      'Ticket review DM sent successfully',
+      {
+        channelId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.ticketNumber ||
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
       }
+    );
+  }
 
-    } catch (dmError) {
-      logger.warn(
-        `Could not DM ticket review to ticket creator ${ticketData.userId}: ${dmError.message}`
-      );
-    }
-
-
+} catch (dmError) {
+  logger.warn(
+    `Could not DM ticket review to ticket creator ${ticketData.userId}: ${dmError.message}`
+  );
+}
     /*
     |--------------------------------------------------------------------------
     | Ticket Close Log
