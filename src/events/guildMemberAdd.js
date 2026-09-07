@@ -1,198 +1,260 @@
-import { Events, EmbedBuilder, PermissionFlagsBits } from 'discord.js';
-import { getColor, botConfig } from '../config/bot.js';
-import { getGuildConfig } from '../services/config/guildConfig.js';
-import { getWelcomeConfig } from '../utils/database.js';
-import { formatWelcomeMessage } from '../utils/welcome.js';
-import { logEvent, EVENT_TYPES } from '../services/loggingService.js';
-import { getServerCounters, updateCounter } from '../services/serverstatsService.js';
-import { setBirthday as dbSetBirthday } from '../utils/database.js';
-import { logger } from '../utils/logger.js';
+// src/events/guildMemberAdd.js
+
+import {
+    Events,
+    EmbedBuilder,
+    PermissionFlagsBits,
+} from 'discord.js';
+
+import {
+    logEvent,
+    EVENT_TYPES,
+} from '../services/loggingService.js';
+
+import {
+    getServerCounters,
+    updateCounter,
+} from '../services/serverstatsService.js';
+
+import {
+    logger,
+} from '../utils/logger.js';
+
+
+// ---------------------------------------------------------------------------
+// Fruity Welcome Configuration
+// ---------------------------------------------------------------------------
+
+const WELCOME_CHANNEL_ID = '1541550434077114418';
+
+const AUTO_ROLE_ID = '1541554587658625104';
+
+const WAVE_EMOJI = '<a:Wave:1545873275635109972>';
+const HEART_EMOJI = '<a:Heart:1546417452915757076>';
+
+const WELCOME_CHANNELS = [
+    '<#1541550498925256744>',
+    '<#1545439852487778455>',
+    '<#1541550578495127592>',
+    '<#1541551382958579782>',
+    '<#1543030791599300759>',
+];
+
+
+// ---------------------------------------------------------------------------
+// Member Join
+// ---------------------------------------------------------------------------
 
 export default {
-  name: Events.GuildMemberAdd,
-  once: false,
-  
-  async execute(member) {
-    try {
+    name: Events.GuildMemberAdd,
+    once: false,
+
+    async execute(member) {
         const { guild, user } = member;
-        
-        const config = await getGuildConfig(member.client, guild.id);
-        
-        const welcomeConfig = await getWelcomeConfig(member.client, guild.id);
-        
-        const welcomeChannelId = welcomeConfig?.channelId;
 
-        if (welcomeConfig?.enabled && welcomeChannelId) {
-            const channel = guild.channels.cache.get(welcomeChannelId);
-            const me = guild.members.me;
-            const permissions = channel?.isTextBased?.() && me ? channel.permissionsFor(me) : null;
-            // Skip only the welcome message if permissions are missing; the rest of the
-            // join pipeline (auto-role, verification, logging, counters) must still run.
-            if (permissions?.has([PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages])) {
-                const formatData = { user, guild, member };
-                const welcomeMessage = formatWelcomeMessage(
-                    welcomeConfig.welcomeMessage || welcomeConfig.welcomeEmbed?.description || botConfig.welcome?.defaultWelcomeMessage || 'Welcome {user} to {server}!',
-                    formatData
-                );
+        try {
 
-                const messageContent = welcomeConfig.welcomePing ? user.toString() : null;
+            // ----------------------------------------------------------------
+            // Welcome Message
+            // ----------------------------------------------------------------
 
-                const embedTitle = formatWelcomeMessage(
-                    welcomeConfig.welcomeEmbed?.title || '🎉 Welcome!',
-                    formatData
-                );
-                const embedFooter = welcomeConfig.welcomeEmbed?.footer
-                    ? formatWelcomeMessage(welcomeConfig.welcomeEmbed.footer, formatData)
-                    : `Welcome to ${guild.name}!`;
+            try {
+                const channel = guild.channels.cache.get(WELCOME_CHANNEL_ID);
 
-                const canEmbed = permissions.has(PermissionFlagsBits.EmbedLinks);
-
-                if (!canEmbed) {
-                    await channel.send({
-                        content: messageContent || welcomeMessage
-                    });
+                if (!channel) {
+                    logger.warn(
+                        `Welcome channel ${WELCOME_CHANNEL_ID} was not found in guild ${guild.id}.`
+                    );
+                } else if (!channel.isTextBased()) {
+                    logger.warn(
+                        `Welcome channel ${WELCOME_CHANNEL_ID} is not a text-based channel.`
+                    );
                 } else {
-                    const embed = new EmbedBuilder()
-                        .setColor(welcomeConfig.welcomeEmbed?.color || getColor('success'))
-                        .setTitle(embedTitle)
-                        .setDescription(welcomeMessage)
-                        .setThumbnail(user.displayAvatarURL())
-                        .addFields(
-                            { name: 'User', value: `${user.tag} (${user.id})`, inline: true },
-                            { name: 'Member Count', value: guild.memberCount.toString(), inline: true }
-                        )
-                        .setTimestamp()
-                        .setFooter({ text: embedFooter });
-                    
-                    if (welcomeConfig.welcomeImage) {
-                        embed.setImage(welcomeConfig.welcomeImage);
-                    } else if (welcomeConfig.welcomeEmbed?.image?.url) {
-                        embed.setImage(welcomeConfig.welcomeEmbed.image.url);
+                    const botMember = guild.members.me;
+
+                    const permissions = botMember
+                        ? channel.permissionsFor(botMember)
+                        : null;
+
+                    if (
+                        !permissions?.has(PermissionFlagsBits.ViewChannel) ||
+                        !permissions?.has(PermissionFlagsBits.SendMessages)
+                    ) {
+                        logger.warn(
+                            `Missing permissions to send welcome message in ${WELCOME_CHANNEL_ID}.`
+                        );
+                    } else if (
+                        !permissions.has(PermissionFlagsBits.EmbedLinks)
+                    ) {
+                        logger.warn(
+                            `Missing Embed Links permission in welcome channel ${WELCOME_CHANNEL_ID}.`
+                        );
+
+                        // Still send the mention if embeds cannot be used.
+                        await channel.send({
+                            content:
+                                `${user}\n\n` +
+                                `${WAVE_EMOJI}  **Welcome to Fruity!**\n` +
+                                `We’re so excited to have you join us, make sure to check out all the essential channels to get the full experience!\n\n` +
+                                `${WELCOME_CHANNELS.join('\n')}\n\n` +
+                                `Hope you enjoy your stay here ${HEART_EMOJI}`,
+                        });
+                    } else {
+
+                        const welcomeEmbed = new EmbedBuilder()
+                            .setDescription(
+                                `${WAVE_EMOJI}  **Welcome to Fruity!**\n\n` +
+                                `We’re so excited to have you join us, make sure to check out all the essential channels to get the full experience!\n\n` +
+                                `${WELCOME_CHANNELS.join('\n')}\n\n` +
+                                `Hope you enjoy your stay here ${HEART_EMOJI}`
+                            )
+                            .setThumbnail(
+                                user.displayAvatarURL({
+                                    size: 256,
+                                })
+                            )
+                            .setTimestamp();
+
+                        await channel.send({
+                            content: user.toString(),
+                            embeds: [welcomeEmbed],
+                        });
                     }
-                    
-                    await channel.send({ 
-                        content: messageContent,
-                        embeds: [embed] 
-                    });
                 }
+
+            } catch (welcomeError) {
+                logger.error(
+                    `Failed to send welcome message for ${user.id}:`,
+                    welcomeError
+                );
             }
-        }
-        
-        if (welcomeConfig?.roleIds && welcomeConfig.roleIds.length > 0) {
-            const delay = welcomeConfig.autoRoleDelay || 0;
-            const singleRoleId = welcomeConfig.roleIds[0];
-            
-            if (delay > 0) {
-                const timeout = setTimeout(async () => {
-                    const role = guild.roles.cache.get(singleRoleId);
-                    if (role) {
-                        await assignRoleSafely(member, role);
+
+
+            // ----------------------------------------------------------------
+            // Automatic Role
+            // ----------------------------------------------------------------
+
+            try {
+                const role = guild.roles.cache.get(AUTO_ROLE_ID);
+
+                if (!role) {
+                    logger.warn(
+                        `Auto role ${AUTO_ROLE_ID} was not found in guild ${guild.id}.`
+                    );
+                } else if (!guild.members.me) {
+                    logger.warn(
+                        `Bot member could not be found in guild ${guild.id}.`
+                    );
+                } else if (
+                    !guild.members.me.permissions.has(
+                        PermissionFlagsBits.ManageRoles
+                    )
+                ) {
+                    logger.warn(
+                        `Bot does not have Manage Roles permission in guild ${guild.id}.`
+                    );
+                } else if (
+                    role.position >= guild.members.me.roles.highest.position
+                ) {
+                    logger.warn(
+                        `Cannot assign auto role ${AUTO_ROLE_ID} because it is higher than or equal to the bot's highest role.`
+                    );
+                } else {
+                    await member.roles.add(
+                        role,
+                        'Automatic Fruity member role'
+                    );
+
+                    logger.info(
+                        `Automatically assigned role ${AUTO_ROLE_ID} to ${user.tag} (${user.id})`
+                    );
+                }
+
+            } catch (roleError) {
+                logger.error(
+                    `Failed to assign auto role to ${user.id}:`,
+                    roleError
+                );
+            }
+
+
+            // ----------------------------------------------------------------
+            // Logging
+            // ----------------------------------------------------------------
+
+            try {
+                await logEvent({
+                    client: member.client,
+                    guildId: guild.id,
+                    eventType: EVENT_TYPES.MEMBER_JOIN,
+
+                    data: {
+                        title: 'User joined',
+
+                        lines: [
+                            `**User:** ${user.toString()} (${user.tag})`,
+                            `**ID:** \`${user.id}\``,
+                            `**Created:** <t:${Math.floor(
+                                user.createdTimestamp / 1000
+                            )}:R>`,
+                            `**Members:** ${guild.memberCount}`,
+                        ],
+
+                        quoted: false,
+
+                        thumbnail: user.displayAvatarURL({
+                            dynamic: true,
+                        }),
+
+                        userId: user.id,
+                    },
+                });
+
+            } catch (loggingError) {
+                logger.debug(
+                    'Error logging member join:',
+                    loggingError
+                );
+            }
+
+
+            // ----------------------------------------------------------------
+            // Server Counters
+            // ----------------------------------------------------------------
+
+            try {
+                const counters = await getServerCounters(
+                    member.client,
+                    guild.id
+                );
+
+                for (const counter of counters) {
+                    if (
+                        counter &&
+                        counter.type &&
+                        counter.channelId &&
+                        counter.enabled !== false
+                    ) {
+                        await updateCounter(
+                            member.client,
+                            guild,
+                            counter
+                        );
                     }
-                }, delay * 1000);
-                if (typeof timeout.unref === 'function') {
-                    timeout.unref();
                 }
-            } else {
-                const role = guild.roles.cache.get(singleRoleId);
-                if (role) {
-                    await assignRoleSafely(member, role);
-                }
-            }
-        }
-        
-        if (config?.verification?.enabled || config?.verification?.autoVerify?.enabled) {
-            await handleVerification(member, guild, config.verification, member.client);
-        }
 
-        try {
-            await logEvent({
-                client: member.client,
-                guildId: guild.id,
-                eventType: EVENT_TYPES.MEMBER_JOIN,
-                data: {
-                    title: 'User joined',
-                    lines: [
-                        `**User:** ${user.toString()} (${user.displayName !== user.username ? `@${user.displayName}` : user.tag})`,
-                        `**ID:** \`${user.id}\``,
-                        `**Created:** <t:${Math.floor(user.createdTimestamp / 1000)}:R>`,
-                        `**Members:** ${guild.memberCount}`,
-                    ],
-                    quoted: false,
-                    thumbnail: user.displayAvatarURL({ dynamic: true }),
-                    userId: user.id,
-                }
-            });
-        } catch (error) {
-            logger.debug('Error logging member join:', error);
-        }
-
-        try {
-            const counters = await getServerCounters(member.client, guild.id);
-            for (const counter of counters) {
-                if (counter && counter.type && counter.channelId && counter.enabled !== false) {
-                    await updateCounter(member.client, guild, counter);
-                }
+            } catch (counterError) {
+                logger.debug(
+                    'Error updating counters on member join:',
+                    counterError
+                );
             }
-        } catch (error) {
-            logger.debug('Error updating counters on member join:', error);
-        }
 
-        try {
-            const backupKey = `guild:${guild.id}:birthdays:left`;
-            const backup = (await member.client.db.get(backupKey)) || {};
-            if (backup[user.id]) {
-                const { month, day } = backup[user.id];
-                await dbSetBirthday(member.client, guild.id, user.id, month, day);
-                delete backup[user.id];
-                await member.client.db.set(backupKey, backup);
-                logger.debug(`Birthday restored for user ${user.id} in guild ${guild.id}`);
-            }
         } catch (error) {
-            logger.debug('Error restoring birthday on member join:', error);
+            logger.error(
+                `Error in guildMemberAdd event for ${user.id}:`,
+                error
+            );
         }
-        
-    } catch (error) {
-        logger.error('Error in guildMemberAdd event:', error);
-    }
-  }
+    },
 };
-
-async function handleVerification(member, guild, verificationConfig, client) {
-    const { autoVerifyOnJoin } = await import('../services/verificationService.js');
-    
-    try {
-        const result = await autoVerifyOnJoin(client, guild, member, verificationConfig);
-        
-        if (result.autoVerified) {
-            logger.info('User auto-verified on join', {
-                guildId: guild.id,
-                userId: member.id,
-                userTag: member.user.tag,
-                roleName: result.roleName,
-                criteria: result.criteria
-            });
-        } else {
-            logger.debug('User not auto-verified on join', {
-                guildId: guild.id,
-                userId: member.id,
-                reason: result.reason
-            });
-        }
-
-    } catch (error) {
-        logger.error('Error in auto-verification for member', {
-            guildId: guild.id,
-            userId: member.id,
-            userTag: member.user.tag,
-            error: error.message
-        });
-    }
-}
-
-async function assignRoleSafely(member, role) {
-    try {
-        await member.roles.add(role);
-    } catch (error) {
-        logger.warn(`Failed to assign role ${role.id} to member ${member.id}:`, error);
-    }
-}
