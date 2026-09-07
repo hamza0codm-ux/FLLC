@@ -2190,29 +2190,49 @@ export async function deleteTicket(
     */
 
     setTimeout(
-      async () => {
-        try {
-          await deleteTicketData(
-            channel.guild.id,
-            channel.id
-          ).catch(
-            () => null
-          );
+  async () => {
+    try {
+      /*
+      |--------------------------------------------------------------------------
+      | Preserve ticket data for the review survey
+      |--------------------------------------------------------------------------
+      |
+      | The ticket channel is deleted, but the database record must remain
+      | so the ticket creator can still submit their review from DMs.
+      |
+      */
 
-          await channel.delete(
-            'Ticket deleted permanently'
-          );
+      ticketData.status =
+        'deleted';
 
-        } catch (error) {
-          logger.error(
-            'Unexpected error during ticket deletion:',
-            error
-          );
-        }
-      },
-      TICKET_DELETE_DELAY_MS
-    );
+      ticketData.deletedAt =
+        new Date().toISOString();
 
+      await saveTicketData(
+        channel.guild.id,
+        channel.id,
+        ticketData
+      );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Delete the Discord channel
+      |--------------------------------------------------------------------------
+      */
+
+      await channel.delete(
+        'Ticket deleted permanently'
+      );
+
+    } catch (error) {
+      logger.error(
+        'Unexpected error during ticket deletion:',
+        error
+      );
+    }
+  },
+  TICKET_DELETE_DELAY_MS
+);
     return ticketData;
 
   } catch (error) {
