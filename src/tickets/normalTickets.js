@@ -1,5 +1,7 @@
 // src/tickets/normalTickets.js
 
+import crypto from 'node:crypto';
+
 import {
   ButtonBuilder,
   ButtonStyle,
@@ -76,6 +78,21 @@ export const NORMAL_TICKET_CONFIG = {
 
 /*
 |--------------------------------------------------------------------------
+| DATABASE STORAGE
+|--------------------------------------------------------------------------
+|
+| The panel message ID and panel configuration hash are stored separately
+| for the Normal panel.
+|
+| This means a bot restart does NOT create a new panel.
+|
+*/
+
+const NORMAL_PANEL_STORAGE_KEY =
+  'fruity:ticket-panels:normal';
+
+/*
+|--------------------------------------------------------------------------
 | BUILD NORMAL TICKET PANEL
 |--------------------------------------------------------------------------
 */
@@ -119,21 +136,23 @@ export function buildNormalTicketPanel() {
     const button =
       NORMAL_TICKET_CONFIG.buttons[i];
 
-    const ticketButton = new ButtonBuilder()
-      .setCustomId(
-        `create_ticket:normal:${button.key}`
-      )
-      .setLabel(button.label)
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji(button.emoji);
-
-    const section = new SectionBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `### ${button.emoji} ${button.label}\n${button.description}`
+    const ticketButton =
+      new ButtonBuilder()
+        .setCustomId(
+          `create_ticket:normal:${button.key}`
         )
-      )
-      .setButtonAccessory(ticketButton);
+        .setLabel(button.label)
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji(button.emoji);
+
+    const section =
+      new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `### ${button.emoji} ${button.label}\n${button.description}`
+          )
+        )
+        .setButtonAccessory(ticketButton);
 
     container.addSectionComponents(section);
 
@@ -207,120 +226,149 @@ export function buildNormalTicketPanel() {
 
 /*
 |--------------------------------------------------------------------------
-| NORMALIZE COMPONENTS
+| PANEL CONFIG HASH
+|--------------------------------------------------------------------------
+|
+| We intentionally hash only the panel's actual visual/configuration data.
+|
+| We do NOT hash Discord's returned Components V2 JSON.
+|
+| This is the important part that prevents false "changed" detections
+| after a restart.
+|
+*/
+
+function getNormalPanelHash() {
+  const panelDefinition = {
+    key: NORMAL_TICKET_CONFIG.key,
+    title: NORMAL_TICKET_CONFIG.title,
+    description: NORMAL_TICKET_CONFIG.description,
+    image: NORMAL_TICKET_CONFIG.image,
+    footer: NORMAL_TICKET_CONFIG.footer,
+    teamText: NORMAL_TICKET_CONFIG.teamText,
+
+    buttons: NORMAL_TICKET_CONFIG.buttons.map(
+      (button) => ({
+        key: button.key,
+        label: button.label,
+        description: button.description,
+        emoji: button.emoji,
+      })
+    ),
+  };
+
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify(panelDefinition)
+    )
+    .digest('hex');
+}
+
+/*
+|--------------------------------------------------------------------------
+| DATABASE HELPERS
 |--------------------------------------------------------------------------
 */
 
-function normalizeComponent(value) {
-  if (Array.isArray(value)) {
-    return value.map(normalizeComponent);
-  }
-
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
-
-  const normalized = {};
-
-  for (const [key, item] of Object.entries(value)) {
-    if (key === 'id') {
-      continue;
+async function getNormalPanelStorage(client) {
+  try {
+    if (
+      !client?.db ||
+      typeof client.db.get !== 'function'
+    ) {
+      return null;
     }
 
-    normalized[key] =
-      normalizeComponent(item);
+    const stored =
+      await client.db.get(
+        NORMAL_PANEL_STORAGE_KEY,
+        null
+      );
+
+    if (
+      !stored ||
+      typeof stored !== 'object'
+    ) {
+      return null;
+    }
+
+    return stored;
+  } catch {
+    return null;
   }
-
-  return normalized;
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET PANEL STRUCTURE
-|--------------------------------------------------------------------------
-*/
-
-function getNormalPanelStructure(
-  messageOrComponents
+async function saveNormalPanelStorage(
+  client,
+  data
 ) {
-  const components =
-    Array.isArray(messageOrComponents)
-      ? messageOrComponents
-      : messageOrComponents?.components || [];
+  try {
+    if (
+      !client?.db ||
+      typeof client.db.set !== 'function'
+    ) {
+      return false;
+    }
 
-  return normalizeComponent(
-    components.map((component) => {
-      if (
-        typeof component?.toJSON ===
-        'function'
-      ) {
-        return component.toJSON();
-      }
-
-      return component;
-    })
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| CHECK WHETHER PANEL CHANGED
-|--------------------------------------------------------------------------
-*/
-
-function normalPanelChanged(
-  existingMessage,
-  newComponents
-) {
-  const existingStructure =
-    getNormalPanelStructure(
-      existingMessage.components
+    await client.db.set(
+      NORMAL_PANEL_STORAGE_KEY,
+      data
     );
 
-  const newStructure =
-    getNormalPanelStructure(
-      newComponents
-    );
-
-  return (
-    JSON.stringify(existingStructure) !==
-    JSON.stringify(newStructure)
-  );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /*
 |--------------------------------------------------------------------------
 | FIND EXISTING NORMAL PANEL
 |--------------------------------------------------------------------------
+|
+| Used ONLY when we don't have a valid stored message ID.
+|
+| This prevents duplicate panels if the database was reset while the
+| actual Discord panel still exists.
+|
 */
 
-async function findNormalPanelMessage(channel) {
+async function findExistingNormalPanel(
+  channel,
+  client
+) {
   try {
     const messages =
       await channel.messages.fetch({
-        limit: 50,
+        limit: 100,
       });
 
     return (
       messages.find((message) => {
         if (
           message.author?.id !==
-          channel.client.user.id
+          client.user.id
         ) {
           return false;
         }
 
-        if (!message.components?.length) {
+        if (
+          !message.components?.length
+        ) {
           return false;
         }
 
-        const structure =
-          getNormalPanelStructure(
-            message.components
-          );
-
         const json =
-          JSON.stringify(structure);
+          JSON.stringify(
+            message.components.map(
+              (component) =>
+                typeof component?.toJSON ===
+                'function'
+                  ? component.toJSON()
+                  : component
+            )
+          );
 
         return json.includes(
           'create_ticket:normal:'
@@ -334,8 +382,93 @@ async function findNormalPanelMessage(channel) {
 
 /*
 |--------------------------------------------------------------------------
-| CREATE / REPLACE NORMAL PANEL
+| GET STORED NORMAL PANEL MESSAGE
 |--------------------------------------------------------------------------
+*/
+
+async function getStoredNormalPanelMessage(
+  client,
+  channel
+) {
+  const storage =
+    await getNormalPanelStorage(client);
+
+  if (!storage?.messageId) {
+    return null;
+  }
+
+  const message =
+    await channel.messages
+      .fetch(storage.messageId)
+      .catch(() => null);
+
+  if (!message) {
+    return null;
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | Make sure the stored message really is the Normal ticket panel.
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    message.author?.id !==
+    client.user.id
+  ) {
+    return null;
+  }
+
+  if (!message.components?.length) {
+    return null;
+  }
+
+  const json =
+    JSON.stringify(
+      message.components.map(
+        (component) =>
+          typeof component?.toJSON ===
+          'function'
+            ? component.toJSON()
+            : component
+      )
+    );
+
+  if (
+    !json.includes(
+      'create_ticket:normal:'
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    message,
+    storage,
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| RECONCILE NORMAL PANEL
+|--------------------------------------------------------------------------
+|
+| IMPORTANT BEHAVIOR:
+|
+| 1. Existing stored message + same config hash:
+|       DO NOTHING.
+|
+| 2. Existing stored message + different config hash:
+|       EDIT THE EXISTING MESSAGE.
+|
+| 3. Stored message deleted:
+|       Search for another existing panel first.
+|
+| 4. No panel exists anywhere:
+|       CREATE ONE.
+|
+| This makes restarts completely safe.
+|
 */
 
 export async function reconcileNormalTicketPanel(
@@ -357,80 +490,175 @@ export async function reconcileNormalTicketPanel(
   const components =
     buildNormalTicketPanel();
 
+  const panelHash =
+    getNormalPanelHash();
+
   const payload = {
     components,
     flags: MessageFlags.IsComponentsV2,
   };
 
-  const existing =
-    await findNormalPanelMessage(channel);
-
   /*
   |--------------------------------------------------------------------------
-  | NO PANEL EXISTS
+  | STEP 1 — Try the persisted message ID
   |--------------------------------------------------------------------------
   */
 
-  if (!existing) {
-    const message =
-      await channel.send(payload);
+  const storedResult =
+    await getStoredNormalPanelMessage(
+      client,
+      channel
+    );
+
+  if (storedResult) {
+    const {
+      message,
+      storage,
+    } = storedResult;
+
+    /*
+    |--------------------------------------------------------------------------
+    | SAME PANEL CONFIG
+    |--------------------------------------------------------------------------
+    |
+    | This is the normal restart path.
+    |
+    | DO NOT EDIT.
+    | DO NOT SEND.
+    | DO NOT DELETE.
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      storage.configHash ===
+      panelHash
+    ) {
+      return {
+        created: false,
+        changed: false,
+        replaced: false,
+        edited: false,
+        messageId: message.id,
+      };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | PANEL CONFIG CHANGED
+    |--------------------------------------------------------------------------
+    |
+    | Edit the existing Discord message.
+    |
+    | We do NOT send a new message.
+    |--------------------------------------------------------------------------
+    */
+
+    await message.edit(payload);
+
+    await saveNormalPanelStorage(
+      client,
+      {
+        messageId: message.id,
+        channelId:
+          NORMAL_TICKET_CONFIG.channelId,
+        configHash: panelHash,
+        updatedAt:
+          new Date().toISOString(),
+      }
+    );
 
     return {
-      created: true,
+      created: false,
       changed: true,
       replaced: false,
+      edited: true,
       messageId: message.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | NOTHING CHANGED
+  | STEP 2 — Stored ID missing/deleted
+  |--------------------------------------------------------------------------
+  |
+  | Before creating anything, search the channel.
+  |
+  | This is critical if the database was reset but the Discord panel
+  | still exists.
   |--------------------------------------------------------------------------
   */
 
-  if (
-    !normalPanelChanged(
-      existing,
-      components
-    )
-  ) {
+  const existing =
+    await findExistingNormalPanel(
+      channel,
+      client
+    );
+
+  if (existing) {
+    /*
+    |--------------------------------------------------------------------------
+    | Recover existing panel ID.
+    |--------------------------------------------------------------------------
+    |
+    | We do NOT create another panel.
+    |
+    | We simply recover the ID and store it.
+    |--------------------------------------------------------------------------
+    */
+
+    await saveNormalPanelStorage(
+      client,
+      {
+        messageId: existing.id,
+        channelId:
+          NORMAL_TICKET_CONFIG.channelId,
+        configHash: panelHash,
+        recoveredAt:
+          new Date().toISOString(),
+      }
+    );
+
     return {
       created: false,
       changed: false,
       replaced: false,
+      edited: false,
+      recovered: true,
       messageId: existing.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | PANEL CHANGED
+  | STEP 3 — NOTHING EXISTS
   |--------------------------------------------------------------------------
   |
-  | Send a completely NEW message.
-  |
+  | Only now are we allowed to create a new panel.
+  |--------------------------------------------------------------------------
   */
 
-  const newMessage =
+  const message =
     await channel.send(payload);
 
-  /*
-  |--------------------------------------------------------------------------
-  | DELETE OLD PANEL
-  |--------------------------------------------------------------------------
-  */
-
-  await existing
-    .delete()
-    .catch(() => null);
+  await saveNormalPanelStorage(
+    client,
+    {
+      messageId: message.id,
+      channelId:
+        NORMAL_TICKET_CONFIG.channelId,
+      configHash: panelHash,
+      createdAt:
+        new Date().toISOString(),
+    }
+  );
 
   return {
     created: true,
     changed: true,
-    replaced: true,
-    oldMessageId: existing.id,
-    messageId: newMessage.id,
+    replaced: false,
+    edited: false,
+    recovered: false,
+    messageId: message.id,
   };
 }
 
