@@ -18,13 +18,9 @@ const BRAND_COLOR = 0xF8D568;
 |--------------------------------------------------------------------------
 | NORMAL TICKET PANEL CONFIG
 |--------------------------------------------------------------------------
-|
-| Edit the panel here.
-|
 */
 
 export const NORMAL_TICKET_CONFIG = {
-
   key: 'normal',
 
   channelId: '1541551721908801576',
@@ -54,7 +50,6 @@ export const NORMAL_TICKET_CONFIG = {
     'The Fruity Support Team will assist you shortly,',
 
   buttons: [
-
     {
       key: 'fruity_application',
       label: 'Fruity Application',
@@ -75,9 +70,7 @@ export const NORMAL_TICKET_CONFIG = {
       description: 'Apply for a staff position.',
       emoji: '<a:Briefcase:1546395107547156563>',
     },
-
   ],
-
 };
 
 /*
@@ -87,12 +80,11 @@ export const NORMAL_TICKET_CONFIG = {
 */
 
 export function buildNormalTicketPanel() {
-
   const container = new ContainerBuilder();
 
   /*
   |--------------------------------------------------------------------------
-  | TITLE + DESCRIPTION
+  | TITLE
   |--------------------------------------------------------------------------
   */
 
@@ -104,7 +96,7 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | HEADER SEPARATOR
+  | TOP SEPARATOR
   |--------------------------------------------------------------------------
   */
 
@@ -128,7 +120,7 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | BUTTON SEPARATOR
+  | SEPARATOR
   |--------------------------------------------------------------------------
   */
 
@@ -143,7 +135,6 @@ export function buildNormalTicketPanel() {
   */
 
   for (const button of NORMAL_TICKET_CONFIG.buttons) {
-
     const ticketButton = new ButtonBuilder()
       .setCustomId(
         `create_ticket:normal:${button.key}`
@@ -155,7 +146,7 @@ export function buildNormalTicketPanel() {
     const section = new SectionBuilder()
       .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
-          `**${button.label}**\n${button.description}`
+          `### ${button.emoji} ${button.label}\n${button.description}`
         )
       )
       .setButtonAccessory(ticketButton);
@@ -184,17 +175,11 @@ export function buildNormalTicketPanel() {
 
 /*
 |--------------------------------------------------------------------------
-| NORMAL PANEL COMPONENT NORMALIZER
+| NORMALIZE COMPONENTS
 |--------------------------------------------------------------------------
-|
-| Discord can add component IDs when the message is created.
-| Those IDs aren't part of our panel configuration, so remove them
-| before comparing the old panel with the new one.
-|
 */
 
 function normalizeComponent(value) {
-
   if (Array.isArray(value)) {
     return value.map(normalizeComponent);
   }
@@ -206,7 +191,6 @@ function normalizeComponent(value) {
   const normalized = {};
 
   for (const [key, item] of Object.entries(value)) {
-
     if (key === 'id') {
       continue;
     }
@@ -224,15 +208,12 @@ function normalizeComponent(value) {
 */
 
 function getNormalPanelStructure(messageOrComponents) {
-
-  const components =
-    Array.isArray(messageOrComponents)
-      ? messageOrComponents
-      : messageOrComponents?.components || [];
+  const components = Array.isArray(messageOrComponents)
+    ? messageOrComponents
+    : messageOrComponents?.components || [];
 
   return normalizeComponent(
     components.map((component) => {
-
       if (typeof component?.toJSON === 'function') {
         return component.toJSON();
       }
@@ -244,17 +225,23 @@ function getNormalPanelStructure(messageOrComponents) {
 
 /*
 |--------------------------------------------------------------------------
-| CHECK IF PANEL CHANGED
+| CHECK FOR CHANGES
 |--------------------------------------------------------------------------
 */
 
-function normalPanelChanged(existingMessage, newComponents) {
-
+function normalPanelChanged(
+  existingMessage,
+  newComponents
+) {
   const existingStructure =
-    getNormalPanelStructure(existingMessage.components);
+    getNormalPanelStructure(
+      existingMessage.components
+    );
 
   const newStructure =
-    getNormalPanelStructure(newComponents);
+    getNormalPanelStructure(
+      newComponents
+    );
 
   return (
     JSON.stringify(existingStructure) !==
@@ -266,15 +253,10 @@ function normalPanelChanged(existingMessage, newComponents) {
 |--------------------------------------------------------------------------
 | FIND EXISTING NORMAL PANEL
 |--------------------------------------------------------------------------
-|
-| Only find OUR Normal ticket panel.
-|
 */
 
 async function findNormalPanelMessage(channel) {
-
   try {
-
     const messages =
       await channel.messages.fetch({
         limit: 50,
@@ -282,7 +264,6 @@ async function findNormalPanelMessage(channel) {
 
     return (
       messages.find((message) => {
-
         if (
           message.author?.id !==
           channel.client.user.id
@@ -305,12 +286,9 @@ async function findNormalPanelMessage(channel) {
         return json.includes(
           'create_ticket:normal:'
         );
-
       }) || null
     );
-
   } catch {
-
     return null;
   }
 }
@@ -321,8 +299,9 @@ async function findNormalPanelMessage(channel) {
 |--------------------------------------------------------------------------
 */
 
-export async function reconcileNormalTicketPanel(client) {
-
+export async function reconcileNormalTicketPanel(
+  client
+) {
   const channel =
     await client.channels
       .fetch(
@@ -331,7 +310,6 @@ export async function reconcileNormalTicketPanel(client) {
       .catch(() => null);
 
   if (!channel?.isTextBased()) {
-
     throw new Error(
       `Normal ticket panel channel ${NORMAL_TICKET_CONFIG.channelId} was not found.`
     );
@@ -341,12 +319,8 @@ export async function reconcileNormalTicketPanel(client) {
     buildNormalTicketPanel();
 
   const payload = {
-
     components,
-
-    flags:
-      MessageFlags.IsComponentsV2,
-
+    flags: MessageFlags.IsComponentsV2,
   };
 
   const existing =
@@ -354,23 +328,18 @@ export async function reconcileNormalTicketPanel(client) {
 
   /*
   |--------------------------------------------------------------------------
-  | NO EXISTING PANEL
+  | NO PANEL EXISTS
   |--------------------------------------------------------------------------
   */
 
   if (!existing) {
-
     const message =
       await channel.send(payload);
 
     return {
-
       created: true,
-
       changed: true,
-
       messageId: message.id,
-
     };
   }
 
@@ -386,24 +355,19 @@ export async function reconcileNormalTicketPanel(client) {
       components
     )
   ) {
-
     return {
-
       created: false,
-
       changed: false,
-
       messageId: existing.id,
-
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | PANEL CHANGED
+  | CONFIG CHANGED
   |--------------------------------------------------------------------------
   |
-  | Send a completely new message instead of editing the old one.
+  | Send a completely NEW message.
   |
   */
 
@@ -412,7 +376,7 @@ export async function reconcileNormalTicketPanel(client) {
 
   /*
   |--------------------------------------------------------------------------
-  | DELETE OLD PANEL
+  | DELETE OLD MESSAGE
   |--------------------------------------------------------------------------
   */
 
@@ -421,17 +385,11 @@ export async function reconcileNormalTicketPanel(client) {
     .catch(() => null);
 
   return {
-
     created: true,
-
     changed: true,
-
     replaced: true,
-
     oldMessageId: existing.id,
-
     messageId: newMessage.id,
-
   };
 }
 
@@ -441,8 +399,9 @@ export async function reconcileNormalTicketPanel(client) {
 |--------------------------------------------------------------------------
 */
 
-export function getNormalTicketType(ticketTypeKey) {
-
+export function getNormalTicketType(
+  ticketTypeKey
+) {
   return (
     NORMAL_TICKET_CONFIG.buttons.find(
       (button) =>
