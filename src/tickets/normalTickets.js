@@ -38,7 +38,7 @@ export const NORMAL_TICKET_CONFIG = {
 
   reviewLogsChannelId: '1542859014499467285',
 
-  title: '🎟️ Fruity Tickets',
+  title: '🎫 Fruity Tickets',
 
   description:
     'Need help with Fruity? Select the option below that best matches what you need.',
