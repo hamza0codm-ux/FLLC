@@ -139,7 +139,7 @@ export function buildNormalTicketPanel() {
     const ticketButton =
       new ButtonBuilder()
         .setCustomId(
-          `create_ticket:normal:${button.id}`
+          `create_ticket:normal:${button.key}`
         )
         .setLabel(button.label)
         .setStyle(ButtonStyle.Secondary)
