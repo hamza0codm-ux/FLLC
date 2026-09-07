@@ -57,7 +57,8 @@ async function ensureGuildContext(interaction) {
   if (!interaction.replied && !interaction.deferred) {
     await replyUserError(interaction, {
       type: ErrorTypes.UNKNOWN,
-      message: 'This action can only be used in a server.',
+      message:
+        'This action can only be used in a server.',
     });
   }
 
@@ -142,64 +143,14 @@ async function assertTicketPermission(
 }
 
 
-async function ensureTicketPermission(
-  interaction,
-  client,
-  actionLabel,
-  options = {}
-) {
-  const {
-    allowTicketCreator = false,
-  } = options;
-
-  const context =
-    await getTicketPermissionContext({
-      client,
-      interaction,
-    });
-
-  if (!context.ticketData) {
-    await replyUserError(interaction, {
-      type: ErrorTypes.UNKNOWN,
-      message:
-        'This action can only be used in a valid ticket channel.',
-    });
-
-    return null;
-  }
-
-  const allowed = allowTicketCreator
-    ? context.canCloseTicket
-    : context.canManageTicket;
-
-  if (!allowed) {
-    const permissionMessage =
-      allowTicketCreator
-        ? 'You must have **Manage Channels**, the configured **Ticket Staff Role**, or be the **ticket creator**.'
-        : 'You must have **Manage Channels** or the configured **Ticket Staff Role**.';
-
-    await replyUserError(interaction, {
-      type: ErrorTypes.PERMISSION,
-      message:
-        `${permissionMessage}\n\nYou cannot ${actionLabel}.`,
-    });
-
-    return null;
-  }
-
-  return context;
-}
-
-
 /*
 |--------------------------------------------------------------------------
 | Ticket Panel + Type
 |--------------------------------------------------------------------------
 |
-| IMPORTANT:
-| These are dynamic imports because normalTickets.js and merchTickets.js
-| depend on ticket handlers. Static imports here create a circular
-| dependency during startup.
+| Dynamic imports are intentional.
+| They prevent the circular dependency between this handler and the
+| Normal/Merch ticket panel files.
 |--------------------------------------------------------------------------
 */
 
@@ -260,155 +211,7 @@ const createTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
-      ) {
-        return;
-      }
-
-      const panelKey = args?.[0];
-      const ticketTypeKey = args?.[1];
-
-      if (
-        !panelKey ||
-        !ticketTypeKey
-      ) {
-        await replyUserError(interaction, {
-          type: ErrorTypes.VALIDATION,
-          message:
-            'This ticket button is missing required information.',
-        });
-
-        return;
-      }
-
-      const {
-        panel,
-        ticketType,
-      } = await getTicketPanelAndType(
-        panelKey,
-        ticketTypeKey
-      );
-
-      if (!panel || !ticketType) {
-        await replyUserError(interaction, {
-          type: ErrorTypes.VALIDATION,
-          message:
-            'This ticket option is no longer available.',
-        });
-
-        return;
-      }
-
-      /*
-      |--------------------------------------------------------------------------
-      | IMPORTANT:
-      | DO NOT perform database ticket-count checks here.
-      |
-      | Discord requires showModal() to happen directly from the button
-      | interaction. The ticket limit is checked after the modal is submitted.
-      |--------------------------------------------------------------------------
-      */
-
-      const rateLimitKey =
-        `${interaction.user.id}:create_ticket`;
-
-      const allowed =
-        await checkRateLimit(
-          rateLimitKey,
-          3,
-          60000
-        );
-
-      if (!allowed) {
-        await replyUserError(interaction, {
-          type: ErrorTypes.RATE_LIMIT,
-          message:
-            'You are creating tickets too quickly. Please wait a minute and try again.',
-        });
-
-        return;
-      }
-
-      const modal =
-        new ModalBuilder()
-          .setCustomId(
-            `create_ticket_modal:${panelKey}:${ticketTypeKey}`
-          )
-          .setTitle(
-            `Create ${ticketType.label} Ticket`
-          );
-
-      const reasonInput =
-        new TextInputBuilder()
-          .setCustomId('reason')
-          .setLabel(
-            'Why are you creating this ticket?'
-          )
-          .setStyle(
-            TextInputStyle.Paragraph
-          )
-          .setPlaceholder(
-            'Describe your issue...'
-          )
-          .setRequired(true)
-          .setMinLength(1)
-          .setMaxLength(1000);
-
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(
-          reasonInput
-        )
-      );
-
-      await interaction.showModal(
-        modal
-      );
-
-    } catch (error) {
-      logger.error(
-        'Error creating ticket modal:',
-        error
-      );
-
-      if (
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
-        await replyUserError(
-          interaction,
-          {
-            type: ErrorTypes.UNKNOWN,
-            message:
-              'Could not open ticket creation form.',
-          }
-        );
-      }
-    }
-  },
-};
-
-
-/*
-|--------------------------------------------------------------------------
-| CREATE TICKET MODAL
-|--------------------------------------------------------------------------
-*/
-
-const createTicketModalHandler = {
-  name: 'create_ticket_modal',
-
-  async execute(
-    interaction,
-    client,
-    args = []
-  ) {
-    try {
-      if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
@@ -425,7 +228,7 @@ const createTicketModalHandler = {
           {
             type: ErrorTypes.VALIDATION,
             message:
-              'This ticket form is invalid.',
+              'This ticket button is missing required information.',
           }
         );
 
@@ -453,6 +256,149 @@ const createTicketModalHandler = {
         return;
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | Rate limit only.
+      |
+      | DO NOT query the database before showModal().
+      |--------------------------------------------------------------------------
+      */
+
+      const rateLimitKey =
+        `${interaction.user.id}:create_ticket`;
+
+      const allowed =
+        await checkRateLimit(
+          rateLimitKey,
+          3,
+          60000
+        );
+
+      if (!allowed) {
+        await replyUserError(
+          interaction,
+          {
+            type: ErrorTypes.RATE_LIMIT,
+            message:
+              'You are creating tickets too quickly. Please wait a minute and try again.',
+          }
+        );
+
+        return;
+      }
+
+      const modal =
+        new ModalBuilder()
+          .setCustomId(
+            `create_ticket_modal:${panelKey}:${ticketTypeKey}`
+          )
+          .setTitle(
+            `Create ${ticketType.label} Ticket`
+          );
+
+      const reasonInput =
+        new TextInputBuilder()
+          .setCustomId('reason')
+          .setLabel(
+            'Why are you creating this ticket?'
+          )
+          .setStyle(
+            TextInputStyle.Paragraph
+          )
+          .setPlaceholder(
+            'Describe your issue...'
+          )
+          .setRequired(true)
+          .setMaxLength(1000);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          reasonInput
+        )
+      );
+
+      await interaction.showModal(
+        modal
+      );
+
+    } catch (error) {
+      logger.error(
+        'Error creating ticket modal:',
+        error
+      );
+
+      if (
+        !interaction.replied &&
+        !interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'Could not open ticket creation form.',
+          }
+        );
+      }
+    }
+  },
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| CREATE TICKET MODAL
+|--------------------------------------------------------------------------
+*/
+
+const createTicketModalHandler = {
+  name: 'create_ticket_modal',
+
+  async execute(
+    interaction,
+    client,
+    args = []
+  ) {
+    try {
+      if (
+        !(await ensureGuildContext(interaction))
+      ) {
+        return;
+      }
+
+      const panelKey = args?.[0];
+      const ticketTypeKey = args?.[1];
+
+      const {
+        panel,
+        ticketType,
+      } = await getTicketPanelAndType(
+        panelKey,
+        ticketTypeKey
+      );
+
+      if (!panel || !ticketType) {
+        await replyUserError(
+          interaction,
+          {
+            type: ErrorTypes.VALIDATION,
+            message:
+              'This ticket type is no longer available.',
+          }
+        );
+
+        return;
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | Defer the modal interaction.
+      |--------------------------------------------------------------------------
+      */
+
       const deferSuccess =
         await InteractionHelper.safeDefer(
           interaction,
@@ -468,7 +414,7 @@ const createTicketModalHandler = {
 
       /*
       |--------------------------------------------------------------------------
-      | Ticket limit check happens HERE, after modal submission.
+      | Ticket limit
       |--------------------------------------------------------------------------
       */
 
@@ -506,7 +452,7 @@ const createTicketModalHandler = {
                 'Ticket Limit Reached',
               description:
                 `You have reached the maximum number of open tickets (${maxTicketsPerUser}).\n\n` +
-                `Please close one of your existing tickets before creating a new one.\n\n` +
+                'Please close one of your existing tickets before creating a new one.\n\n' +
                 `**Current Tickets:** ${currentTicketCount}/${maxTicketsPerUser}`,
               color: '#e74c3c',
             }),
@@ -516,43 +462,86 @@ const createTicketModalHandler = {
         return;
       }
 
+      /*
+      |--------------------------------------------------------------------------
+      | Reason
+      |--------------------------------------------------------------------------
+      */
+
       const reason =
-        interaction.fields.getTextInputValue(
-          'reason'
-        );
+        interaction.fields
+          .getTextInputValue(
+            'reason'
+          )
+          ?.trim() ||
+        'No reason provided.';
 
-      const ticket =
-        await createTicket({
-          client,
-          interaction,
-          panel,
-          ticketType,
-          panelKey,
-          ticketTypeKey,
-          reason,
-        });
 
-      if (
-        ticket?.channel
-      ) {
-        await interaction.editReply({
-          embeds: [
-            successEmbed(
-              'Ticket Created',
-              `Your ticket has been created: ${ticket.channel}`
-            ),
-          ],
-        });
-      } else {
-        await interaction.editReply({
-          embeds: [
-            successEmbed(
-              'Ticket Created',
-              'Your ticket has been created successfully.'
-            ),
-          ],
-        });
-      }
+      /*
+      |--------------------------------------------------------------------------
+      | CREATE TICKET
+      |--------------------------------------------------------------------------
+      |
+      | IMPORTANT:
+      | Your ticket service expects positional arguments:
+      |
+      | createTicket(
+      |   guild,
+      |   member,
+      |   categoryId,
+      |   reason,
+      |   ticketNumber,
+      |   options
+      | )
+      |
+      |--------------------------------------------------------------------------
+      */
+
+      const {
+        channel,
+      } = await createTicket(
+        interaction.guild,
+        interaction.member,
+        panel.categoryId,
+        reason,
+        undefined,
+        {
+          panelType:
+            panel.key ||
+            panelKey,
+
+          ticketType:
+            ticketType.label,
+
+          ticketTypeKey:
+            ticketType.key ||
+            ticketTypeKey,
+
+          ticketLogsChannelId:
+            panel.ticketLogsChannelId,
+
+          transcriptLogsChannelId:
+            panel.transcriptLogsChannelId,
+
+          reviewLogsChannelId:
+            panel.reviewLogsChannelId,
+
+          staffRoleId:
+            panel.staffRoleId,
+
+          teamText:
+            panel.teamText,
+        }
+      );
+
+      await interaction.editReply({
+        embeds: [
+          successEmbed(
+            'Ticket Created',
+            `Your ticket has been created in ${channel}!`
+          ),
+        ],
+      });
 
     } catch (error) {
       logger.error(
@@ -560,42 +549,17 @@ const createTicketModalHandler = {
         error
       );
 
-      if (
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
-        await replyUserError(
-          interaction,
-          {
-            type:
-              error?.type ||
-              ErrorTypes.UNKNOWN,
-            message:
-              error?.userMessage ||
-              'An error occurred while creating the ticket.',
-          }
-        );
-      } else {
-        try {
-          await interaction.editReply({
-            embeds: [
-              createEmbed({
-                title:
-                  'Ticket Creation Failed',
-                description:
-                  error?.userMessage ||
-                  'An error occurred while creating the ticket.',
-                color: '#e74c3c',
-              }),
-            ],
-          });
-        } catch (replyError) {
-          logger.error(
-            'Could not send ticket creation error:',
-            replyError
-          );
+      await handleInteractionError(
+        interaction,
+        error,
+        {
+          type: 'modal',
+          handler:
+            'create_ticket_modal',
+          customId:
+            interaction.customId,
         }
-      }
+      );
     }
   },
 };
@@ -616,28 +580,20 @@ const closeTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
 
-      const context =
-        await assertTicketPermission(
-          interaction,
-          client,
-          'close this ticket',
-          {
-            allowTicketCreator:
-              true,
-          },
-          2000
-        );
-
-      if (!context) {
-        return;
-      }
+      await assertTicketPermission(
+        interaction,
+        client,
+        'close this ticket',
+        {
+          allowTicketCreator: true,
+        },
+        2000
+      );
 
       const modal =
         new ModalBuilder()
@@ -691,7 +647,7 @@ const closeTicketHandler = {
               ErrorTypes.UNKNOWN,
             message:
               error?.userMessage ||
-              'Could not open the close ticket form.',
+              'Could not open ticket close form.',
           }
         );
       }
@@ -715,28 +671,20 @@ const closeTicketModalHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
 
-      const context =
-        await assertTicketPermission(
-          interaction,
-          client,
-          'close this ticket',
-          {
-            allowTicketCreator:
-              true,
-          },
-          2000
-        );
-
-      if (!context) {
-        return;
-      }
+      await assertTicketPermission(
+        interaction,
+        client,
+        'close this ticket',
+        {
+          allowTicketCreator: true,
+        },
+        2000
+      );
 
       const deferSuccess =
         await InteractionHelper.safeDefer(
@@ -751,20 +699,20 @@ const closeTicketModalHandler = {
         return;
       }
 
-      let reason = '';
-
-      try {
-        reason =
-          interaction.fields.getTextInputValue(
+      const providedReason =
+        interaction.fields
+          .getTextInputValue(
             'reason'
-          );
-      } catch {
-        reason = '';
-      }
+          )
+          ?.trim();
+
+      const reason =
+        providedReason ||
+        'Closed via ticket button without a specific reason.';
 
       await closeTicket(
         interaction.channel,
-        interaction.member,
+        interaction.user,
         reason
       );
 
@@ -779,7 +727,7 @@ const closeTicketModalHandler = {
 
     } catch (error) {
       logger.error(
-        'Error closing ticket:',
+        'Error submitting close ticket modal:',
         error
       );
 
@@ -798,6 +746,24 @@ const closeTicketModalHandler = {
               'An error occurred while closing the ticket.',
           }
         );
+      } else {
+        try {
+          await interaction.editReply({
+            embeds: [
+              createEmbed({
+                title:
+                  'Ticket Error',
+                description:
+                  error?.userMessage ||
+                  'An error occurred while closing the ticket.',
+                color:
+                  '#e74c3c',
+              }),
+            ],
+          });
+        } catch {
+          // Interaction may already be closed.
+        }
       }
     }
   },
@@ -819,9 +785,7 @@ const claimTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
@@ -849,14 +813,14 @@ const claimTicketHandler = {
 
       await claimTicket(
         interaction.channel,
-        interaction.member
+        interaction.user
       );
 
       await interaction.editReply({
         embeds: [
           successEmbed(
             'Ticket Claimed',
-            `This ticket has been claimed by ${interaction.user}.`
+            'You have claimed this ticket.'
           ),
         ],
       });
@@ -903,9 +867,7 @@ const priorityTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
@@ -964,14 +926,16 @@ const priorityTicketHandler = {
             }
           );
 
+      const row =
+        new ActionRowBuilder()
+          .addComponents(
+            priorityMenu
+          );
+
       await interaction.reply({
         content:
           'Select the priority for this ticket:',
-        components: [
-          new ActionRowBuilder().addComponents(
-            priorityMenu
-          ),
-        ],
+        components: [row],
         flags:
           MessageFlags.Ephemeral,
       });
@@ -1015,9 +979,7 @@ const unclaimTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
@@ -1102,9 +1064,7 @@ const reopenTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
@@ -1136,21 +1096,19 @@ const reopenTicketHandler = {
         '../services/ticket.js'
       );
 
-      const {
-        movedToOpenCategory,
-        openCategoryMoveFailed,
-      } = await reopenTicket(
-        interaction.channel,
-        interaction.member
-      );
+      const result =
+        await reopenTicket(
+          interaction.channel,
+          interaction.member
+        );
 
-      let reopenMessage =
+      let message =
         'This ticket has been reopened.';
 
       if (
-        openCategoryMoveFailed
+        result?.openCategoryMoveFailed
       ) {
-        reopenMessage +=
+        message +=
           ' Note: Could not move the channel back to the open tickets category.';
       }
 
@@ -1158,7 +1116,7 @@ const reopenTicketHandler = {
         embeds: [
           successEmbed(
             'Ticket Reopened',
-            reopenMessage
+            message
           ),
         ],
       });
@@ -1202,9 +1160,7 @@ const deleteTicketHandler = {
   ) {
     try {
       if (
-        !(await ensureGuildContext(
-          interaction
-        ))
+        !(await ensureGuildContext(interaction))
       ) {
         return;
       }
