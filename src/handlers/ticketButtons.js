@@ -317,6 +317,26 @@ const createTicketHandler = {
         )
       );
 
+      /*
+      |--------------------------------------------------------------------------
+      | Register the modal handler before showing the modal.
+      |
+      | The button interaction and modal submission are separate Discord
+      | interactions. The modal submission is resolved through
+      | client.modals in interactionCreate.js.
+      |
+      | This guarantees that create_ticket_modal exists even when the
+      | normal startup loader only registers button handlers.
+      |--------------------------------------------------------------------------
+      */
+
+      if (client?.modals?.set) {
+        client.modals.set(
+          createTicketModalHandler.name,
+          createTicketModalHandler
+        );
+      }
+
       await interaction.showModal(
         modal
       );
@@ -371,6 +391,17 @@ const createTicketModalHandler = {
 
       const panelKey = args?.[0];
       const ticketTypeKey = args?.[1];
+
+      if (
+        !panelKey ||
+        !ticketTypeKey
+      ) {
+        throw createError(
+          'Missing ticket modal arguments',
+          ErrorTypes.VALIDATION,
+          'This ticket form is missing required information.'
+        );
+      }
 
       const {
         panel,
@@ -482,8 +513,7 @@ const createTicketModalHandler = {
       | CREATE TICKET
       |--------------------------------------------------------------------------
       |
-      | IMPORTANT:
-      | Your ticket service expects positional arguments:
+      | The ticket service expects positional arguments:
       |
       | createTicket(
       |   guild,
@@ -533,6 +563,14 @@ const createTicketModalHandler = {
             panel.teamText,
         }
       );
+
+      if (!channel) {
+        throw createError(
+          'Ticket channel was not created',
+          ErrorTypes.UNKNOWN,
+          'The ticket channel could not be created. Please try again.'
+        );
+      }
 
       await interaction.editReply({
         embeds: [
@@ -624,6 +662,19 @@ const closeTicketHandler = {
           reasonInput
         )
       );
+
+      /*
+      |--------------------------------------------------------------------------
+      | Register close modal handler before showing the modal.
+      |--------------------------------------------------------------------------
+      */
+
+      if (client?.modals?.set) {
+        client.modals.set(
+          closeTicketModalHandler.name,
+          closeTicketModalHandler
+        );
+      }
 
       await interaction.showModal(
         modal
@@ -1221,6 +1272,7 @@ const deleteTicketHandler = {
           {
             type: ErrorTypes.UNKNOWN,
             message:
+              error?.userMessage ||
               'An error occurred while deleting the ticket.',
           }
         );
