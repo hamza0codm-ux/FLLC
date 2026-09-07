@@ -1474,7 +1474,7 @@ try {
             .setLabel(
               'Add Comment'
             )
-            .setEmoji('💅')
+            .setEmoji('📨')
             .setStyle(
               ButtonStyle.Secondary
             ),
