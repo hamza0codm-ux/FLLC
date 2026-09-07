@@ -69,7 +69,7 @@ export default {
         const buttons = new ActionRowBuilder().addComponents(
             new ButtonBuilder()
                 .setCustomId(`suggestion:approve:${id}`)
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Success)
                 .setEmoji({
                     name: 'Yes',
                     id: '1545795445043888239',
@@ -78,7 +78,7 @@ export default {
 
             new ButtonBuilder()
                 .setCustomId(`suggestion:deny:${id}`)
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Danger)
                 .setEmoji({
                     name: 'No',
                     id: '1545795160586190858',
@@ -87,7 +87,7 @@ export default {
 
             new ButtonBuilder()
                 .setCustomId(`suggestion:community:${id}`)
-                .setStyle(ButtonStyle.Secondary)
+                .setStyle(ButtonStyle.Primary)
                 .setEmoji({
                     name: 'Package',
                     id: '1546271416436006942',
