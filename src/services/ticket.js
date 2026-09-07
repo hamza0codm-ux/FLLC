@@ -369,12 +369,6 @@ async function generateTicketChannelName(
 }
 
 
-/*
-|--------------------------------------------------------------------------
-| Ticket Embed
-|--------------------------------------------------------------------------
-*/
-
 function buildTicketEmbed(
   ticketData
 ) {
@@ -387,15 +381,25 @@ function buildTicketEmbed(
       ? `<@${ticketData.claimedBy}>`
       : 'Not claimed';
 
+  const status =
+    ticketData.status === 'closed'
+      ? CLOSED_STATUS
+      : OPEN_STATUS;
+
   const description =
     `${ticketData.userMention || `<@${ticketData.userId}>`}, thank you for opening a ticket.\n\n` +
+
     `**Ticket Type:** ${ticketData.ticketType || 'Unknown'}\n` +
     `**Reason:** ${ticketData.reason || 'Not provided'}\n` +
     `**Priority:** ${getPriorityDisplay(priority)}\n` +
-    `**Status:** ${ticketData.status === 'closed' ? CLOSED_STATUS : OPEN_STATUS}\n` +
+    `**Status:** ${status}\n` +
     `**Claimed By:** ${claimedBy}\n\n` +
+
     `---------------------------------------------------\n\n` +
-    `${ticketData.teamText || DEFAULT_TEAM_TEXT}`;
+
+    `${ticketData.teamText || DEFAULT_TEAM_TEXT}\n` +
+    `Please provide your details now so we can assist you faster.\n` +
+    `Please do not ping owners or staff members too much.`;
 
   return createEmbed({
     title:
@@ -415,7 +419,6 @@ function buildTicketEmbed(
     },
   });
 }
-
 
 /*
 |--------------------------------------------------------------------------
