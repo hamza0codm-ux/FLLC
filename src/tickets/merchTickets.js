@@ -1,5 +1,7 @@
 // src/tickets/merchTickets.js
 
+import crypto from 'node:crypto';
+
 import {
   ButtonBuilder,
   ButtonStyle,
@@ -82,6 +84,15 @@ export const MERCH_TICKET_CONFIG = {
 
 /*
 |--------------------------------------------------------------------------
+| DATABASE STORAGE
+|--------------------------------------------------------------------------
+*/
+
+const MERCH_PANEL_STORAGE_KEY =
+  'fruity:ticket-panels:merch';
+
+/*
+|--------------------------------------------------------------------------
 | BUILD MERCH TICKET PANEL
 |--------------------------------------------------------------------------
 */
@@ -125,21 +136,23 @@ export function buildMerchTicketPanel() {
     const button =
       MERCH_TICKET_CONFIG.buttons[i];
 
-    const ticketButton = new ButtonBuilder()
-      .setCustomId(
-        `create_ticket:merch:${button.key}`
-      )
-      .setLabel(button.label)
-      .setStyle(ButtonStyle.Secondary)
-      .setEmoji(button.emoji);
-
-    const section = new SectionBuilder()
-      .addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          `### ${button.emoji} ${button.label}\n${button.description}`
+    const ticketButton =
+      new ButtonBuilder()
+        .setCustomId(
+          `create_ticket:merch:${button.key}`
         )
-      )
-      .setButtonAccessory(ticketButton);
+        .setLabel(button.label)
+        .setStyle(ButtonStyle.Secondary)
+        .setEmoji(button.emoji);
+
+    const section =
+      new SectionBuilder()
+        .addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            `### ${button.emoji} ${button.label}\n${button.description}`
+          )
+        )
+        .setButtonAccessory(ticketButton);
 
     container.addSectionComponents(section);
 
@@ -213,85 +226,98 @@ export function buildMerchTicketPanel() {
 
 /*
 |--------------------------------------------------------------------------
-| NORMALIZE COMPONENTS
+| PANEL CONFIG HASH
 |--------------------------------------------------------------------------
 */
 
-function normalizeComponent(value) {
-  if (Array.isArray(value)) {
-    return value.map(normalizeComponent);
-  }
+function getMerchPanelHash() {
+  const panelDefinition = {
+    key: MERCH_TICKET_CONFIG.key,
+    title: MERCH_TICKET_CONFIG.title,
+    description:
+      MERCH_TICKET_CONFIG.description,
+    image: MERCH_TICKET_CONFIG.image,
+    footer: MERCH_TICKET_CONFIG.footer,
+    teamText:
+      MERCH_TICKET_CONFIG.teamText,
 
-  if (!value || typeof value !== 'object') {
-    return value;
-  }
+    buttons:
+      MERCH_TICKET_CONFIG.buttons.map(
+        (button) => ({
+          key: button.key,
+          label: button.label,
+          description:
+            button.description,
+          emoji: button.emoji,
+        })
+      ),
+  };
 
-  const normalized = {};
+  return crypto
+    .createHash('sha256')
+    .update(
+      JSON.stringify(panelDefinition)
+    )
+    .digest('hex');
+}
 
-  for (const [key, item] of Object.entries(value)) {
-    if (key === 'id') {
-      continue;
+/*
+|--------------------------------------------------------------------------
+| DATABASE HELPERS
+|--------------------------------------------------------------------------
+*/
+
+async function getMerchPanelStorage(
+  client
+) {
+  try {
+    if (
+      !client?.db ||
+      typeof client.db.get !== 'function'
+    ) {
+      return null;
     }
 
-    normalized[key] =
-      normalizeComponent(item);
+    const stored =
+      await client.db.get(
+        MERCH_PANEL_STORAGE_KEY,
+        null
+      );
+
+    if (
+      !stored ||
+      typeof stored !== 'object'
+    ) {
+      return null;
+    }
+
+    return stored;
+  } catch {
+    return null;
   }
-
-  return normalized;
 }
 
-/*
-|--------------------------------------------------------------------------
-| GET PANEL STRUCTURE
-|--------------------------------------------------------------------------
-*/
-
-function getMerchPanelStructure(
-  messageOrComponents
+async function saveMerchPanelStorage(
+  client,
+  data
 ) {
-  const components =
-    Array.isArray(messageOrComponents)
-      ? messageOrComponents
-      : messageOrComponents?.components || [];
+  try {
+    if (
+      !client?.db ||
+      typeof client.db.set !== 'function'
+    ) {
+      return false;
+    }
 
-  return normalizeComponent(
-    components.map((component) => {
-      if (
-        typeof component?.toJSON ===
-        'function'
-      ) {
-        return component.toJSON();
-      }
-
-      return component;
-    })
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| CHECK WHETHER PANEL CHANGED
-|--------------------------------------------------------------------------
-*/
-
-function merchPanelChanged(
-  existingMessage,
-  newComponents
-) {
-  const existingStructure =
-    getMerchPanelStructure(
-      existingMessage.components
+    await client.db.set(
+      MERCH_PANEL_STORAGE_KEY,
+      data
     );
 
-  const newStructure =
-    getMerchPanelStructure(
-      newComponents
-    );
-
-  return (
-    JSON.stringify(existingStructure) !==
-    JSON.stringify(newStructure)
-  );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /*
@@ -300,33 +326,41 @@ function merchPanelChanged(
 |--------------------------------------------------------------------------
 */
 
-async function findMerchPanelMessage(channel) {
+async function findExistingMerchPanel(
+  channel,
+  client
+) {
   try {
     const messages =
       await channel.messages.fetch({
-        limit: 50,
+        limit: 100,
       });
 
     return (
       messages.find((message) => {
         if (
           message.author?.id !==
-          channel.client.user.id
+          client.user.id
         ) {
           return false;
         }
 
-        if (!message.components?.length) {
+        if (
+          !message.components?.length
+        ) {
           return false;
         }
 
-        const structure =
-          getMerchPanelStructure(
-            message.components
-          );
-
         const json =
-          JSON.stringify(structure);
+          JSON.stringify(
+            message.components.map(
+              (component) =>
+                typeof component?.toJSON ===
+                'function'
+                  ? component.toJSON()
+                  : component
+            )
+          );
 
         return json.includes(
           'create_ticket:merch:'
@@ -340,7 +374,69 @@ async function findMerchPanelMessage(channel) {
 
 /*
 |--------------------------------------------------------------------------
-| CREATE / REPLACE MERCH PANEL
+| GET STORED MERCH PANEL MESSAGE
+|--------------------------------------------------------------------------
+*/
+
+async function getStoredMerchPanelMessage(
+  client,
+  channel
+) {
+  const storage =
+    await getMerchPanelStorage(client);
+
+  if (!storage?.messageId) {
+    return null;
+  }
+
+  const message =
+    await channel.messages
+      .fetch(storage.messageId)
+      .catch(() => null);
+
+  if (!message) {
+    return null;
+  }
+
+  if (
+    message.author?.id !==
+    client.user.id
+  ) {
+    return null;
+  }
+
+  if (!message.components?.length) {
+    return null;
+  }
+
+  const json =
+    JSON.stringify(
+      message.components.map(
+        (component) =>
+          typeof component?.toJSON ===
+          'function'
+            ? component.toJSON()
+            : component
+      )
+    );
+
+  if (
+    !json.includes(
+      'create_ticket:merch:'
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    message,
+    storage,
+  };
+}
+
+/*
+|--------------------------------------------------------------------------
+| RECONCILE MERCH PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -363,80 +459,149 @@ export async function reconcileMerchTicketPanel(
   const components =
     buildMerchTicketPanel();
 
+  const panelHash =
+    getMerchPanelHash();
+
   const payload = {
     components,
     flags: MessageFlags.IsComponentsV2,
   };
 
-  const existing =
-    await findMerchPanelMessage(channel);
-
   /*
   |--------------------------------------------------------------------------
-  | NO PANEL EXISTS
+  | STEP 1 — Try persisted message ID
   |--------------------------------------------------------------------------
   */
 
-  if (!existing) {
-    const message =
-      await channel.send(payload);
+  const storedResult =
+    await getStoredMerchPanelMessage(
+      client,
+      channel
+    );
+
+  if (storedResult) {
+    const {
+      message,
+      storage,
+    } = storedResult;
+
+    /*
+    |--------------------------------------------------------------------------
+    | SAME CONFIG = DO ABSOLUTELY NOTHING
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      storage.configHash ===
+      panelHash
+    ) {
+      return {
+        created: false,
+        changed: false,
+        replaced: false,
+        edited: false,
+        messageId: message.id,
+      };
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | CONFIG CHANGED = EDIT EXISTING MESSAGE
+    |--------------------------------------------------------------------------
+    */
+
+    await message.edit(payload);
+
+    await saveMerchPanelStorage(
+      client,
+      {
+        messageId: message.id,
+        channelId:
+          MERCH_TICKET_CONFIG.channelId,
+        configHash: panelHash,
+        updatedAt:
+          new Date().toISOString(),
+      }
+    );
 
     return {
-      created: true,
+      created: false,
       changed: true,
       replaced: false,
+      edited: true,
       messageId: message.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | NOTHING CHANGED
+  | STEP 2 — SEARCH FOR AN EXISTING PANEL
   |--------------------------------------------------------------------------
   */
 
-  if (
-    !merchPanelChanged(
-      existing,
-      components
-    )
-  ) {
+  const existing =
+    await findExistingMerchPanel(
+      channel,
+      client
+    );
+
+  if (existing) {
+    /*
+    |--------------------------------------------------------------------------
+    | RECOVER EXISTING PANEL
+    |--------------------------------------------------------------------------
+    */
+
+    await saveMerchPanelStorage(
+      client,
+      {
+        messageId: existing.id,
+        channelId:
+          MERCH_TICKET_CONFIG.channelId,
+        configHash: panelHash,
+        recoveredAt:
+          new Date().toISOString(),
+      }
+    );
+
     return {
       created: false,
       changed: false,
       replaced: false,
+      edited: false,
+      recovered: true,
       messageId: existing.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | PANEL CHANGED
+  | STEP 3 — NO PANEL EXISTS
   |--------------------------------------------------------------------------
-  |
-  | Send a completely NEW message.
-  |
   */
 
-  const newMessage =
+  const message =
     await channel.send(payload);
 
-  /*
-  |--------------------------------------------------------------------------
-  | DELETE OLD PANEL
-  |--------------------------------------------------------------------------
-  */
-
-  await existing
-    .delete()
-    .catch(() => null);
+  await saveMerchPanelStorage(
+    client,
+    {
+      messageId: message.id,
+      channelId:
+        MERCH_TICKET_CONFIG.channelId,
+      configHash: panelHash,
+      createdAt:
+        new Date().toISOString(),
+    }
+  );
 
   return {
     created: true,
     changed: true,
-    replaced: true,
-    oldMessageId: existing.id,
-    messageId: newMessage.id,
+    replaced: false,
+    edited: false,
+    recovered: false,
+    messageId: message.id,
   };
 }
 
