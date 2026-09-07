@@ -437,7 +437,7 @@ export function buildTicketControlRow({
             ? 'Claimed'
             : 'Claim'
         )
-        .setEmoji('💼')
+        .setEmoji('🙋‍♂️')
         .setStyle(
           ButtonStyle.Primary
         )
