@@ -84,7 +84,7 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | TITLE
+  | PANEL TITLE + DESCRIPTION
   |--------------------------------------------------------------------------
   */
 
@@ -96,31 +96,7 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | TOP SEPARATOR
-  |--------------------------------------------------------------------------
-  */
-
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | BANNER
-  |--------------------------------------------------------------------------
-  */
-
-  container.addMediaGalleryComponents(
-    new MediaGalleryBuilder().addItems(
-      new MediaGalleryItemBuilder().setURL(
-        NORMAL_TICKET_CONFIG.image
-      )
-    )
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | SEPARATOR
+  | DIVIDER
   |--------------------------------------------------------------------------
   */
 
@@ -134,7 +110,14 @@ export function buildNormalTicketPanel() {
   |--------------------------------------------------------------------------
   */
 
-  for (const button of NORMAL_TICKET_CONFIG.buttons) {
+  for (
+    let i = 0;
+    i < NORMAL_TICKET_CONFIG.buttons.length;
+    i++
+  ) {
+    const button =
+      NORMAL_TICKET_CONFIG.buttons[i];
+
     const ticketButton = new ButtonBuilder()
       .setCustomId(
         `create_ticket:normal:${button.key}`
@@ -153,10 +136,55 @@ export function buildNormalTicketPanel() {
 
     container.addSectionComponents(section);
 
-    container.addSeparatorComponents(
-      new SeparatorBuilder()
-    );
+    /*
+    |--------------------------------------------------------------------------
+    | DIVIDER BETWEEN OPTIONS
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      i <
+      NORMAL_TICKET_CONFIG.buttons.length - 1
+    ) {
+      container.addSeparatorComponents(
+        new SeparatorBuilder()
+      );
+    }
   }
+
+  /*
+  |--------------------------------------------------------------------------
+  | DIVIDER BEFORE IMAGE
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | BANNER IMAGE
+  |--------------------------------------------------------------------------
+  */
+
+  container.addMediaGalleryComponents(
+    new MediaGalleryBuilder().addItems(
+      new MediaGalleryItemBuilder().setURL(
+        NORMAL_TICKET_CONFIG.image
+      )
+    )
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | DIVIDER BEFORE FOOTER
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -177,6 +205,11 @@ export function buildNormalTicketPanel() {
 |--------------------------------------------------------------------------
 | NORMALIZE COMPONENTS
 |--------------------------------------------------------------------------
+|
+| Discord assigns component IDs internally.
+| These IDs are ignored when checking whether
+| the panel configuration has changed.
+|
 */
 
 function normalizeComponent(value) {
@@ -195,7 +228,8 @@ function normalizeComponent(value) {
       continue;
     }
 
-    normalized[key] = normalizeComponent(item);
+    normalized[key] =
+      normalizeComponent(item);
   }
 
   return normalized;
@@ -207,14 +241,20 @@ function normalizeComponent(value) {
 |--------------------------------------------------------------------------
 */
 
-function getNormalPanelStructure(messageOrComponents) {
-  const components = Array.isArray(messageOrComponents)
-    ? messageOrComponents
-    : messageOrComponents?.components || [];
+function getNormalPanelStructure(
+  messageOrComponents
+) {
+  const components =
+    Array.isArray(messageOrComponents)
+      ? messageOrComponents
+      : messageOrComponents?.components || [];
 
   return normalizeComponent(
     components.map((component) => {
-      if (typeof component?.toJSON === 'function') {
+      if (
+        typeof component?.toJSON ===
+        'function'
+      ) {
         return component.toJSON();
       }
 
@@ -225,7 +265,7 @@ function getNormalPanelStructure(messageOrComponents) {
 
 /*
 |--------------------------------------------------------------------------
-| CHECK FOR CHANGES
+| CHECK WHETHER PANEL CHANGED
 |--------------------------------------------------------------------------
 */
 
@@ -264,6 +304,12 @@ async function findNormalPanelMessage(channel) {
 
     return (
       messages.find((message) => {
+        /*
+        |--------------------------------------------------------------------------
+        | ONLY LOOK FOR OUR BOT'S MESSAGES
+        |--------------------------------------------------------------------------
+        */
+
         if (
           message.author?.id !==
           channel.client.user.id
@@ -282,6 +328,12 @@ async function findNormalPanelMessage(channel) {
 
         const json =
           JSON.stringify(structure);
+
+        /*
+        |--------------------------------------------------------------------------
+        | IDENTIFY NORMAL TICKET PANEL
+        |--------------------------------------------------------------------------
+        */
 
         return json.includes(
           'create_ticket:normal:'
@@ -328,7 +380,7 @@ export async function reconcileNormalTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | NO PANEL EXISTS
+  | NO EXISTING PANEL
   |--------------------------------------------------------------------------
   */
 
@@ -339,13 +391,14 @@ export async function reconcileNormalTicketPanel(
     return {
       created: true,
       changed: true,
+      replaced: false,
       messageId: message.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | NOTHING CHANGED
+  | NO CHANGES
   |--------------------------------------------------------------------------
   */
 
@@ -358,16 +411,17 @@ export async function reconcileNormalTicketPanel(
     return {
       created: false,
       changed: false,
+      replaced: false,
       messageId: existing.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | CONFIG CHANGED
+  | PANEL CHANGED
   |--------------------------------------------------------------------------
   |
-  | Send a completely NEW message.
+  | Send a completely new message.
   |
   */
 
@@ -376,7 +430,7 @@ export async function reconcileNormalTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | DELETE OLD MESSAGE
+  | DELETE OLD PANEL
   |--------------------------------------------------------------------------
   */
 
