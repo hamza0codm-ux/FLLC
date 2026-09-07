@@ -20,7 +20,7 @@ const YES = '<a:Yes:1545795445043888239>';
 const NO = '<a:No:1545795160586190858>';
 const LOADING = '<a:Loading:1546268064008642641>';
 const PACKAGE = '<a:Package:1546271416436006942>';
-const APPLY = '<:Apply:1329723672801316925>';
+const APPLY = '<:Apply:1546570253968871430>';
 
 const MANAGEMENT_ROLE_ID = null;
 // Put your Management role ID here later.
