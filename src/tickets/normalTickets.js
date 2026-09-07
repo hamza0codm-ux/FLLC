@@ -9,6 +9,7 @@ import {
   MessageFlags,
   SectionBuilder,
   SeparatorBuilder,
+  SeparatorSpacingSize,
   TextDisplayBuilder,
 } from 'discord.js';
 
@@ -84,7 +85,7 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | PANEL TITLE + DESCRIPTION
+  | TITLE + DESCRIPTION
   |--------------------------------------------------------------------------
   */
 
@@ -96,7 +97,7 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | DIVIDER
+  | TOP DIVIDER
   |--------------------------------------------------------------------------
   */
 
@@ -138,7 +139,7 @@ export function buildNormalTicketPanel() {
 
     /*
     |--------------------------------------------------------------------------
-    | DIVIDER BETWEEN OPTIONS
+    | LARGE SPACING BETWEEN OPTIONS
     |--------------------------------------------------------------------------
     */
 
@@ -148,6 +149,9 @@ export function buildNormalTicketPanel() {
     ) {
       container.addSeparatorComponents(
         new SeparatorBuilder()
+          .setSpacing(
+            SeparatorSpacingSize.Large
+          )
       );
     }
   }
@@ -205,11 +209,6 @@ export function buildNormalTicketPanel() {
 |--------------------------------------------------------------------------
 | NORMALIZE COMPONENTS
 |--------------------------------------------------------------------------
-|
-| Discord assigns component IDs internally.
-| These IDs are ignored when checking whether
-| the panel configuration has changed.
-|
 */
 
 function normalizeComponent(value) {
@@ -304,12 +303,6 @@ async function findNormalPanelMessage(channel) {
 
     return (
       messages.find((message) => {
-        /*
-        |--------------------------------------------------------------------------
-        | ONLY LOOK FOR OUR BOT'S MESSAGES
-        |--------------------------------------------------------------------------
-        */
-
         if (
           message.author?.id !==
           channel.client.user.id
@@ -328,12 +321,6 @@ async function findNormalPanelMessage(channel) {
 
         const json =
           JSON.stringify(structure);
-
-        /*
-        |--------------------------------------------------------------------------
-        | IDENTIFY NORMAL TICKET PANEL
-        |--------------------------------------------------------------------------
-        */
 
         return json.includes(
           'create_ticket:normal:'
@@ -380,7 +367,7 @@ export async function reconcileNormalTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | NO EXISTING PANEL
+  | NO PANEL EXISTS
   |--------------------------------------------------------------------------
   */
 
@@ -398,7 +385,7 @@ export async function reconcileNormalTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | NO CHANGES
+  | NOTHING CHANGED
   |--------------------------------------------------------------------------
   */
 
@@ -421,7 +408,7 @@ export async function reconcileNormalTicketPanel(
   | PANEL CHANGED
   |--------------------------------------------------------------------------
   |
-  | Send a completely new message.
+  | Send a completely NEW message.
   |
   */
 
