@@ -37,54 +37,81 @@ export default {
       logger.error("Failed to set bot presence:", error);
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | NORMAL TICKET PANEL
-    |--------------------------------------------------------------------------
-    */
+   /*
+|--------------------------------------------------------------------------
+| NORMAL TICKET PANEL
+|--------------------------------------------------------------------------
+*/
 
-    try {
-      startupLog("Sending/updating Normal ticket panel...");
+try {
+  startupLog(
+    'Checking Normal ticket panel...'
+  );
 
-      const normalTicketPanel =
-        await reconcileNormalTicketPanel(client);
+  const normalTicketPanel =
+    await reconcileNormalTicketPanel(client);
 
-      startupLog(
-        `Normal ticket panel ${
-          normalTicketPanel.created ? "created" : "updated"
-        } successfully. Message ID: ${normalTicketPanel.messageId}`
-      );
-    } catch (error) {
-      logger.error(
-        "Failed to send/update Normal ticket panel:",
-        error
-      );
-    }
+  if (normalTicketPanel.created) {
+    startupLog(
+      `Normal ticket panel created. Message ID: ${normalTicketPanel.messageId}`
+    );
+  } else if (normalTicketPanel.edited) {
+    startupLog(
+      `Normal ticket panel configuration changed — existing message edited. Message ID: ${normalTicketPanel.messageId}`
+    );
+  } else if (normalTicketPanel.recovered) {
+    startupLog(
+      `Normal ticket panel already existed — message ID recovered: ${normalTicketPanel.messageId}`
+    );
+  } else {
+    startupLog(
+      `Normal ticket panel unchanged. Message ID: ${normalTicketPanel.messageId}`
+    );
+  }
+} catch (error) {
+  logger.error(
+    'Failed to reconcile Normal ticket panel:',
+    error
+  );
+}
 
-    /*
-    |--------------------------------------------------------------------------
-    | MERCH TICKET PANEL
-    |--------------------------------------------------------------------------
-    */
+/*
+|--------------------------------------------------------------------------
+| MERCH TICKET PANEL
+|--------------------------------------------------------------------------
+*/
 
-    try {
-      startupLog("Sending/updating Merch ticket panel...");
+try {
+  startupLog(
+    'Checking Merch ticket panel...'
+  );
 
-      const merchTicketPanel =
-        await reconcileMerchTicketPanel(client);
+  const merchTicketPanel =
+    await reconcileMerchTicketPanel(client);
 
-      startupLog(
-        `Merch ticket panel ${
-          merchTicketPanel.created ? "created" : "updated"
-        } successfully. Message ID: ${merchTicketPanel.messageId}`
-      );
-    } catch (error) {
-      logger.error(
-        "Failed to send/update Merch ticket panel:",
-        error
-      );
-    }
-
+  if (merchTicketPanel.created) {
+    startupLog(
+      `Merch ticket panel created. Message ID: ${merchTicketPanel.messageId}`
+    );
+  } else if (merchTicketPanel.edited) {
+    startupLog(
+      `Merch ticket panel configuration changed — existing message edited. Message ID: ${merchTicketPanel.messageId}`
+    );
+  } else if (merchTicketPanel.recovered) {
+    startupLog(
+      `Merch ticket panel already existed — message ID recovered: ${merchTicketPanel.messageId}`
+    );
+  } else {
+    startupLog(
+      `Merch ticket panel unchanged. Message ID: ${merchTicketPanel.messageId}`
+    );
+  }
+} catch (error) {
+  logger.error(
+    'Failed to reconcile Merch ticket panel:',
+    error
+  );
+}
     /*
     |--------------------------------------------------------------------------
     | MUSIC
