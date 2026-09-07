@@ -232,7 +232,8 @@ export function buildMerchTicketPanel() {
 
 function getMerchPanelHash() {
   const panelDefinition = {
-    key: MERCH_TICKET_CONFIG.key,
+  version: 2,
+  key: MERCH_TICKET_CONFIG.key,
     title: MERCH_TICKET_CONFIG.title,
     description:
       MERCH_TICKET_CONFIG.description,
