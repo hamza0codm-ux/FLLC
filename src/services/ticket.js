@@ -766,6 +766,7 @@ export async function createTicket(
             {
                 id:
                     guild.id,
+
                 deny: [
                     PermissionFlagsBits.ViewChannel,
                 ],
@@ -774,6 +775,7 @@ export async function createTicket(
             {
                 id:
                     member.id,
+
                 allow: [
                     PermissionFlagsBits.ViewChannel,
                     PermissionFlagsBits.SendMessages,
@@ -787,6 +789,7 @@ export async function createTicket(
             permissionOverwrites.push({
                 id:
                     staffRoleId,
+
                 allow: [
                     PermissionFlagsBits.ViewChannel,
                     PermissionFlagsBits.SendMessages,
@@ -896,15 +899,10 @@ export async function createTicket(
             ticketData
         );
 
-        const staffMention =
-            staffRoleId
-                ? ` <@&${staffRoleId}>`
-                : '';
-
         const ticketMessage =
             await channel.send({
                 content:
-                    `${member}${staffMention}`,
+                    `${member}`,
 
                 embeds: [
                     buildMainTicketEmbed(
@@ -921,12 +919,7 @@ export async function createTicket(
                         member.id,
                     ],
 
-                    roles:
-                        staffRoleId
-                            ? [
-                                staffRoleId,
-                            ]
-                            : [],
+                    roles: [],
                 },
             });
 
