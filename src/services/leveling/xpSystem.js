@@ -73,7 +73,6 @@ export const LEVEL_REWARDS = [
     },
 ];
 
-
 // ============================================================
 // LEVEL-UP ANNOUNCEMENT
 // ============================================================
@@ -82,7 +81,6 @@ const LEVEL_UP_CHANNEL_ID = '1546846929676148766';
 
 const LEVEL_UP_BANNER =
     'https://media.discordapp.net/attachments/1380169626171871282/1546404727149826058/9.jpg?ex=6aa0faa1&is=6a9fa921&hm=8f35ce4624c078bc967b6980c3da4a8b30aab7d6037c27e80f374155effab04b&=&format=webp&width=2048&height=682';
-
 
 // ============================================================
 // PEACH WEEKLY XP MULTIPLIER
@@ -127,7 +125,6 @@ function getISOWeekNumber(date = new Date()) {
     );
 }
 
-
 function getPeachMultiplier() {
     const week = getISOWeekNumber();
 
@@ -135,7 +132,6 @@ function getPeachMultiplier() {
         (week - 1) % PEACH_WEEKLY_MULTIPLIERS.length
     ];
 }
-
 
 // ============================================================
 // XP MUTEX
@@ -153,22 +149,21 @@ function getXpMutex(guildId, userId) {
     return xpMutexes.get(key);
 }
 
-
 // ============================================================
 // ADD XP
 // ============================================================
 
-export const addXp = wrapServiceBoundary(
-    async (
-        client,
-        guildId,
-        userId,
-        amount,
-        member = null
-    ) => {
-        const mutex = getXpMutex(guildId, userId);
+export const addXp = async (
+    client,
+    guildId,
+    userId,
+    amount,
+    member = null
+) => {
+    const mutex = getXpMutex(guildId, userId);
 
-        return mutex.runExclusive(async () => {
+    return mutex.runExclusive(async () => {
+        try {
             const levelingConfig =
                 await getLevelingConfig(
                     client,
@@ -180,7 +175,7 @@ export const addXp = wrapServiceBoundary(
             }
 
             let levelData =
-                await getUserLevel(
+                await getUserLevelData(
                     client,
                     guildId,
                     userId
@@ -192,7 +187,18 @@ export const addXp = wrapServiceBoundary(
                     xp: 0,
                     totalXp: 0,
                     lastMessage: null,
+                    rank: 0,
                 };
+            }
+
+            // ====================================================
+            // VALIDATE XP AMOUNT
+            // ====================================================
+
+            const xpAmount = Number(amount);
+
+            if (!Number.isFinite(xpAmount) || xpAmount <= 0) {
+                return null;
             }
 
             // ====================================================
@@ -206,7 +212,7 @@ export const addXp = wrapServiceBoundary(
             }
 
             const boostedAmount = Math.floor(
-                amount * multiplier
+                xpAmount * multiplier
             );
 
             levelData.xp += boostedAmount;
@@ -222,8 +228,7 @@ export const addXp = wrapServiceBoundary(
 
             while (
                 levelData.level < 1000 &&
-                levelData.xp >=
-                    getXpForLevel(levelData.level)
+                levelData.xp >= getXpForLevel(levelData.level)
             ) {
                 levelData.xp -=
                     getXpForLevel(levelData.level);
@@ -247,7 +252,7 @@ export const addXp = wrapServiceBoundary(
             // SAVE FIRST
             // ====================================================
 
-            await saveUserLevel(
+            await saveUserLevelData(
                 client,
                 guildId,
                 userId,
@@ -290,9 +295,9 @@ export const addXp = wrapServiceBoundary(
                     await logEvent({
                         client,
                         guildId,
-                        type: 'LEVEL_UP',
-                        userId,
+                        eventType: 'leveling.levelup',
                         data: {
+                            userId,
                             level: levelData.level,
                             reward: reward?.name ?? null,
                         },
@@ -316,13 +321,17 @@ export const addXp = wrapServiceBoundary(
                 reward,
                 leveledUp,
             };
-        });
-    },
-    {
-        name: 'addXp',
-    }
-);
 
+        } catch (error) {
+            logger.error(
+                `Error adding XP for user ${userId} in guild ${guildId}:`,
+                error
+            );
+
+            throw error;
+        }
+    });
+};
 
 // ============================================================
 // AWARD LEVEL ROLE
@@ -340,7 +349,7 @@ async function awardRoleReward(member, reward) {
                 .filter(Boolean);
 
         // --------------------------------------------------------
-        // Remove ALL previous leveling roles
+        // REMOVE ALL PREVIOUS LEVELING ROLES
         // --------------------------------------------------------
 
         const previousRoles =
@@ -365,7 +374,7 @@ async function awardRoleReward(member, reward) {
         }
 
         // --------------------------------------------------------
-        // Add the new highest/current leveling role
+        // ADD CURRENT LEVELING ROLE
         // --------------------------------------------------------
 
         if (
@@ -382,6 +391,7 @@ async function awardRoleReward(member, reward) {
         logger.debug(
             `Level reward updated for ${member.user.tag}: ${reward.name}`
         );
+
     } catch (error) {
         logger.error(
             `Failed to award level reward ${reward.name} to ${member.user.tag}:`,
@@ -389,7 +399,6 @@ async function awardRoleReward(member, reward) {
         );
     }
 }
-
 
 // ============================================================
 // LEVEL-UP ANNOUNCEMENT
@@ -426,11 +435,14 @@ async function sendLevelUpAnnouncement(
 
         const embed = {
             color: 0xf1c40f,
+
             description:
                 `Congrats ${member} you level up'ed to ${rewardText}!`,
+
             image: {
                 url: LEVEL_UP_BANNER,
             },
+
             footer: {
                 text: `Level ${levelData.level}`,
             },
@@ -438,13 +450,18 @@ async function sendLevelUpAnnouncement(
 
         await channel.send({
             content: `<@${member.user.id}>`,
-            embeds: [embed],
+
+            embeds: [
+                embed
+            ],
+
             allowedMentions: {
                 users: [
-                    member.user.id,
+                    member.user.id
                 ],
             },
         });
+
     } catch (error) {
         logger.error(
             `Failed to send level-up announcement for ${member.user.tag}:`,
@@ -452,7 +469,6 @@ async function sendLevelUpAnnouncement(
         );
     }
 }
-
 
 // ============================================================
 // EXPORT HELPERS
