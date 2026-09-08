@@ -12,7 +12,7 @@ import { getLevelingUserKey } from './leveling.js';
 import {
     getLoggingConfig,
     logEvent,
-} from '../logging/loggingService.js';
+} from '../loggingService.js';
 
 import { formatLogLine } from '../../utils/logFormatter.js';
 import { Mutex } from '../../utils/mutex.js';
