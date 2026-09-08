@@ -586,11 +586,11 @@ async function sendLevelUpAnnouncement(
         |--------------------------------------------------------------------------
         */
 
-        const rewardText =
-            reward
-                ? `<@&${reward.roleId}>`
-                : `**Level ${levelData.level}**`;
-
+      const rewardText =
+    reward
+        ? `**${reward.name}**`
+        : `**Level ${levelData.level}**`;
+        
         const embed =
             new EmbedBuilder()
                 .setColor(0xF8D568)
