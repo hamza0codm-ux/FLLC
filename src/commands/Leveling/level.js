@@ -1,150 +1,227 @@
-import { getColor } from '../../config/bot.js';
-import { SlashCommandBuilder, PermissionFlagsBits, ChannelType, MessageFlags } from 'discord.js';
-import { createEmbed } from '../../utils/embeds.js';
-import { getLevelingConfig, saveLevelingConfig } from '../../services/leveling/leveling.js';
-import { botHasPermission } from '../../utils/permissionGuard.js';
-import { TitanBotError, ErrorTypes, replyUserError } from '../../utils/errorHandler.js';
+import {
+    SlashCommandBuilder,
+    EmbedBuilder,
+} from 'discord.js';
+
+import {
+    getLevelingConfig,
+    getUserLevelData,
+    getLeaderboard,
+    getXpForLevel,
+} from '../../services/leveling/leveling.js';
+
 import { InteractionHelper } from '../../utils/interactionHelper.js';
 import { logger } from '../../utils/logger.js';
-import levelDashboard from './modules/level_dashboard.js';
 
 export default {
     data: new SlashCommandBuilder()
         .setName('level')
-        .setDescription('Manage the leveling system')
-        .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
+        .setDescription('Check your level or another member\'s level')
         .setDMPermission(false)
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('setup')
-                .setDescription('Set up the leveling system — this also enables it')
-                .addChannelOption((option) =>
-                    option
-                        .setName('channel')
-                        .setDescription('Channel to send level-up notifications in')
-                        .addChannelTypes(ChannelType.GuildText)
-                        .setRequired(true),
-                )
-                .addIntegerOption((option) =>
-                    option
-                        .setName('xp_min')
-                        .setDescription('Minimum XP awarded per message (default: 15)')
-                        .setMinValue(1)
-                        .setMaxValue(500)
-                        .setRequired(false),
-                )
-                .addIntegerOption((option) =>
-                    option
-                        .setName('xp_max')
-                        .setDescription('Maximum XP awarded per message (default: 25)')
-                        .setMinValue(1)
-                        .setMaxValue(500)
-                        .setRequired(false),
-                )
-                .addStringOption((option) =>
-                    option
-                        .setName('message')
-                        .setDescription(
-                            'Level-up message. Use {user} and {level} as placeholders (default provided)',
-                        )
-                        .setMaxLength(500)
-                        .setRequired(false),
-                )
-                .addIntegerOption((option) =>
-                    option
-                        .setName('xp_cooldown')
-                        .setDescription('Seconds between XP grants per user (default: 60)')
-                        .setMinValue(0)
-                        .setMaxValue(3600)
-                        .setRequired(false),
-                ),
-        )
-        .addSubcommand((subcommand) =>
-            subcommand
-                .setName('dashboard')
-                .setDescription('Open the interactive leveling configuration dashboard'),
+        .addUserOption(option =>
+            option
+                .setName('user')
+                .setDescription('The member whose level you want to check')
+                .setRequired(false)
         ),
+
     category: 'Leveling',
 
     async execute(interaction, config, client) {
-        const deferred = await InteractionHelper.safeDefer(interaction, {
-            flags: MessageFlags.Ephemeral,
-        });
-        if (!deferred) return;
+        try {
+            await InteractionHelper.safeDefer(interaction);
 
-        if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild)) {
-            return await replyUserError(interaction, { type: ErrorTypes.PERMISSION, message: 'You need the **Manage Server** permission to use this command.' });
-        }
+            const guildId = interaction.guildId;
 
-        const subcommand = interaction.options.getSubcommand();
+            const targetUser =
+                interaction.options.getUser('user') ||
+                interaction.user;
 
-        if (subcommand === 'dashboard') {
-            return levelDashboard.execute(interaction, config, client);
-        }
+            const levelingConfig =
+                await getLevelingConfig(client, guildId);
 
-        if (subcommand === 'setup') {
-            const channel = interaction.options.getChannel('channel');
-            const xpMin = interaction.options.getInteger('xp_min') ?? 15;
-            const xpMax = interaction.options.getInteger('xp_max') ?? 25;
-            const message =
-                interaction.options.getString('message') ??
-                '{user} has leveled up to level {level}!';
-            const xpCooldown = interaction.options.getInteger('xp_cooldown') ?? 60;
+            if (levelingConfig?.enabled === false) {
+                await InteractionHelper.safeEditReply(interaction, {
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(0xF8D568)
+                            .setTitle('Leveling Disabled')
+                            .setDescription(
+                                'The leveling system is currently disabled.'
+                            ),
+                    ],
+                });
 
-            if (xpMin > xpMax) {
-                return await replyUserError(interaction, { type: ErrorTypes.VALIDATION, message: `Minimum XP (**${xpMin}**) cannot be greater than maximum XP (**${xpMax}**).` });
+                return;
             }
 
-            if (!botHasPermission(channel, ['SendMessages', 'EmbedLinks'])) {
-                throw new TitanBotError(
-                    'Bot missing permissions in the specified channel',
-                    ErrorTypes.PERMISSION,
-                    `I need **SendMessages** and **EmbedLinks** permissions in ${channel} to send level-up notifications.`,
+            const data = await getUserLevelData(
+                client,
+                guildId,
+                targetUser.id
+            );
+
+            const currentLevel = data.level || 0;
+            const currentXp = data.xp || 0;
+            const totalXp = data.totalXp || 0;
+
+            const xpNeeded =
+                getXpForLevel(currentLevel);
+
+            const progress =
+                xpNeeded > 0
+                    ? Math.min(
+                        100,
+                        Math.floor(
+                            (currentXp / xpNeeded) * 100
+                        )
+                    )
+                    : 100;
+
+            const leaderboard =
+                await getLeaderboard(
+                    client,
+                    guildId,
+                    100
                 );
-            }
 
-            const existingConfig = await getLevelingConfig(client, interaction.guildId);
+            const rank =
+                leaderboard.findIndex(
+                    entry =>
+                        entry.userId === targetUser.id
+                ) + 1;
 
-            if (existingConfig.configured) {
-                return await replyUserError(interaction, { type: ErrorTypes.UNKNOWN, message: `The leveling system is already set up on this server (level-up notifications go to <#${existingConfig.levelUpChannel}>).\n\nUse \`/level dashboard\` to adjust any settings.` });
-            }
-
-            const newConfig = {
-                ...existingConfig,
-                configured: true,
-                enabled: true,
-                levelUpChannel: channel.id,
-                xpRange: { min: xpMin, max: xpMax },
-                xpCooldown: xpCooldown,
-                levelUpMessage: message,
-                announceLevelUp: true,
+            const rewardRoles = {
+                5: '1545924954162470962',
+                10: '1545924957710852247',
+                15: '1545924960743198770',
+                20: '1545924963226230885',
+                25: '1545924966267093094',
+                30: '1545924968515108896',
+                35: '1545924970679640085',
+                40: '1545924973573443667',
+                50: '1545924976756920430',
+                75: '1545924979420303522',
+                100: '1545924982025093260',
             };
 
-            await saveLevelingConfig(client, interaction.guildId, newConfig);
+            const reachedRewards = Object.entries(rewardRoles)
+                .filter(([level]) =>
+                    currentLevel >= Number(level)
+                )
+                .sort(
+                    (a, b) =>
+                        Number(b[0]) - Number(a[0])
+                );
 
-            logger.info(`Leveling system set up in guild ${interaction.guildId}`, {
-                channelId: channel.id,
-                xpMin,
-                xpMax,
-                xpCooldown,
-                userId: interaction.user.id,
-            });
+            let currentRank = 'No reward rank yet.';
 
-            return await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    createEmbed({
-                        title: 'Leveling System Set Up',
-                        description:
-                            `The leveling system is now **enabled** and ready to go.\n\n` +
-                            `**Level-up Channel:** ${channel}\n` +
-                            `**XP per Message:** ${xpMin} – ${xpMax}\n` +
-                            `**XP Cooldown:** ${xpCooldown}s\n` +
-                            `**Level-up Message:** \`${message}\`\n\n` +
-                            `Use \`/level dashboard\` to adjust any of these settings at any time.`,
-                        color: 'success',
-                    }),
-                ],
-            });
+            if (reachedRewards.length > 0) {
+                const [rewardLevel, roleId] =
+                    reachedRewards[0];
+
+                const role =
+                    interaction.guild.roles.cache.get(
+                        roleId
+                    );
+
+                currentRank =
+                    role
+                        ? `${role}`
+                        : `Level ${rewardLevel}`;
+            }
+
+            const progressBlocks = 10;
+            const filledBlocks = Math.round(
+                (progress / 100) *
+                progressBlocks
+            );
+
+            const progressBar =
+                '▰'.repeat(filledBlocks) +
+                '▱'.repeat(
+                    progressBlocks - filledBlocks
+                );
+
+            const embed =
+                new EmbedBuilder()
+                    .setColor(0xF8D568)
+                    .setAuthor({
+                        name: targetUser.tag,
+                        iconURL:
+                            targetUser.displayAvatarURL({
+                                extension: 'png',
+                                size: 128,
+                            }),
+                    })
+                    .setTitle(
+                        `${targetUser.username}'s Level`
+                    )
+                    .setDescription(
+                        `**Level ${currentLevel}**\n\n` +
+                        `${progressBar} **${progress}%**`
+                    )
+                    .addFields(
+                        {
+                            name: 'XP',
+                            value:
+                                `**${currentXp.toLocaleString()}** / ` +
+                                `**${xpNeeded.toLocaleString()}**`,
+                            inline: true,
+                        },
+                        {
+                            name: 'Total XP',
+                            value:
+                                `**${totalXp.toLocaleString()}**`,
+                            inline: true,
+                        },
+                        {
+                            name: 'Server Rank',
+                            value:
+                                rank > 0
+                                    ? `#${rank}`
+                                    : 'Unranked',
+                            inline: true,
+                        },
+                        {
+                            name: 'Current Reward',
+                            value: currentRank,
+                            inline: true,
+                        }
+                    )
+                    .setFooter({
+                        text:
+                            targetUser.id === interaction.user.id
+                                ? 'Keep chatting to earn more XP!'
+                                : 'Fruity Leveling System',
+                    })
+                    .setTimestamp();
+
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [embed],
+                }
+            );
+        } catch (error) {
+            logger.error(
+                'Error executing /level:',
+                error
+            );
+
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [
+                        new EmbedBuilder()
+                            .setColor(0xED4245)
+                            .setTitle('Level Error')
+                            .setDescription(
+                                'I could not retrieve that member\'s level.'
+                            ),
+                    ],
+                }
+            ).catch(() => {});
         }
     },
 };
