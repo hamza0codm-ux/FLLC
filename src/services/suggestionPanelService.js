@@ -7,11 +7,19 @@ import {
     ButtonStyle,
 } from 'discord.js';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const PUBLIC_CHANNEL_ID = '1545071209429999736';
 
-// CHANGE THIS whenever you intentionally change the panel.
-const PANEL_VERSION = '2';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const STATE_FILE = path.join(
+    __dirname,
+    '../../data/suggestionPanel.json'
+);
 
 const SUGGESTION_EMOJI = {
     name: 'Suggestion',
@@ -59,48 +67,61 @@ function buildSuggestionPanel() {
     };
 }
 
-/*
- * The panel's hash is stored in the message footer.
- * This lets us know whether the code-generated panel
- * is different without editing the Discord message.
- */
 function getPanelHash() {
     const panel = buildSuggestionPanel();
 
     const data = {
-        version: PANEL_VERSION,
         embeds: panel.embeds.map(embed => embed.toJSON()),
-        components: panel.components.map(component => component.toJSON()),
+        components: panel.components.map(component =>
+            component.toJSON()
+        ),
     };
 
     return crypto
         .createHash('sha256')
         .update(JSON.stringify(data))
-        .digest('hex')
-        .slice(0, 16);
+        .digest('hex');
 }
 
-function buildPanelWithHash() {
-    const panel = buildSuggestionPanel();
-    const hash = getPanelHash();
+function loadState() {
+    try {
+        if (!fs.existsSync(STATE_FILE)) {
+            return null;
+        }
 
-    panel.embeds[0].setFooter({
-        text: `Fruity Suggestions • ${hash}`,
-    });
-
-    return panel;
+        return JSON.parse(
+            fs.readFileSync(STATE_FILE, 'utf8')
+        );
+    } catch {
+        return null;
+    }
 }
 
-function getExistingPanelHash(message) {
-    const footer = message.embeds?.[0]?.footer?.text;
+function saveState(state) {
+    const directory = path.dirname(STATE_FILE);
 
-    if (!footer) {
+    if (!fs.existsSync(directory)) {
+        fs.mkdirSync(directory, {
+            recursive: true,
+        });
+    }
+
+    fs.writeFileSync(
+        STATE_FILE,
+        JSON.stringify(state, null, 2)
+    );
+}
+
+async function findPanelById(channel, messageId) {
+    if (!messageId) {
         return null;
     }
 
-    const match = footer.match(/Fruity Suggestions • ([a-f0-9]{16})$/i);
-
-    return match ? match[1] : null;
+    try {
+        return await channel.messages.fetch(messageId);
+    } catch {
+        return null;
+    }
 }
 
 async function findExistingSuggestionPanel(channel, client) {
@@ -114,15 +135,13 @@ async function findExistingSuggestionPanel(channel, client) {
                 return false;
             }
 
-            if (!message.components?.length) {
-                return false;
-            }
-
-            return message.components.some(row =>
+            return message.components?.some(row =>
                 row.components?.some(
                     component =>
-                        component.customId === 'suggestion:submit' ||
-                        component.customId === 'suggestion:status'
+                        component.customId ===
+                            'suggestion:submit' ||
+                        component.customId ===
+                            'suggestion:status'
                 )
             );
         }) || null
@@ -141,22 +160,88 @@ export async function reconcileSuggestionPanel(client) {
             );
         }
 
-        const existingPanel =
-            await findExistingSuggestionPanel(
+        const currentHash = getPanelHash();
+        const state = loadState();
+
+        /*
+         * ============================================
+         * FIRST RUN
+         * ============================================
+         *
+         * If we already know the panel and its hash,
+         * check that exact message.
+         */
+        if (state?.messageId && state?.hash) {
+            const existingPanel = await findPanelById(
                 channel,
-                client
+                state.messageId
             );
 
-        const desiredHash = getPanelHash();
+            // Panel still exists and nothing changed.
+            if (
+                existingPanel &&
+                state.hash === currentHash
+            ) {
+                return {
+                    action: 'unchanged',
+                    messageId: existingPanel.id,
+                    channelId: channel.id,
+                };
+            }
 
-        // --------------------------------------------
-        // NO PANEL EXISTS
-        // --------------------------------------------
+            /*
+             * The code changed.
+             *
+             * Send the new panel FIRST.
+             */
+            if (state.hash !== currentHash) {
+                const newPanel = await channel.send(
+                    buildSuggestionPanel()
+                );
 
-        if (!existingPanel) {
+                /*
+                 * Only after the new panel successfully
+                 * exists do we delete the old one.
+                 */
+                if (existingPanel) {
+                    try {
+                        await existingPanel.delete(
+                            'Suggestion panel updated'
+                        );
+                    } catch (error) {
+                        console.warn(
+                            'Could not delete old suggestion panel:',
+                            error
+                        );
+                    }
+                }
+
+                saveState({
+                    messageId: newPanel.id,
+                    hash: currentHash,
+                });
+
+                return {
+                    action: 'replaced',
+                    oldMessageId:
+                        existingPanel?.id ?? null,
+                    messageId: newPanel.id,
+                    channelId: channel.id,
+                };
+            }
+
+            /*
+             * State exists but old panel was deleted.
+             * Create a replacement.
+             */
             const newPanel = await channel.send(
-                buildPanelWithHash()
+                buildSuggestionPanel()
             );
+
+            saveState({
+                messageId: newPanel.id,
+                hash: currentHash,
+            });
 
             return {
                 action: 'created',
@@ -165,14 +250,30 @@ export async function reconcileSuggestionPanel(client) {
             };
         }
 
-        const existingHash =
-            getExistingPanelHash(existingPanel);
+        /*
+         * ============================================
+         * MIGRATION / FIRST RUN
+         * ============================================
+         *
+         * We don't have a saved state yet.
+         *
+         * IMPORTANT:
+         * If the panel already exists, DON'T replace it.
+         *
+         * Simply remember its ID and the current code hash.
+         */
+        const existingPanel =
+            await findExistingSuggestionPanel(
+                channel,
+                client
+            );
 
-        // --------------------------------------------
-        // NOTHING CHANGED
-        // --------------------------------------------
+        if (existingPanel) {
+            saveState({
+                messageId: existingPanel.id,
+                hash: currentHash,
+            });
 
-        if (existingHash === desiredHash) {
             return {
                 action: 'unchanged',
                 messageId: existingPanel.id,
@@ -180,31 +281,20 @@ export async function reconcileSuggestionPanel(client) {
             };
         }
 
-        // --------------------------------------------
-        // PANEL CHANGED
-        //
-        // SEND NEW FIRST
-        // THEN DELETE OLD
-        // --------------------------------------------
-
+        /*
+         * No panel exists at all.
+         */
         const newPanel = await channel.send(
-            buildPanelWithHash()
+            buildSuggestionPanel()
         );
 
-        try {
-            await existingPanel.delete(
-                'Replacing outdated suggestion panel'
-            );
-        } catch (deleteError) {
-            console.warn(
-                'New suggestion panel was created, but the old panel could not be deleted:',
-                deleteError
-            );
-        }
+        saveState({
+            messageId: newPanel.id,
+            hash: currentHash,
+        });
 
         return {
-            action: 'replaced',
-            oldMessageId: existingPanel.id,
+            action: 'created',
             messageId: newPanel.id,
             channelId: channel.id,
         };
