@@ -2,8 +2,8 @@ import { logger } from '../../utils/logger.js';
 
 import {
     getLevelingConfig,
-    getUserLevel,
-    saveUserLevel,
+    getUserLevelData,
+    saveUserLevelData,
     getXpForLevel,
 } from './leveling.js';
 
