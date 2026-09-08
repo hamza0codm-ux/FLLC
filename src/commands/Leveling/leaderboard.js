@@ -50,12 +50,11 @@ export default {
           const member = await interaction.guild.members.fetch(user.userId).catch(() => null);
           const userMention = member?.user.toString() || `<@${user.userId}>`;
           const xpForNextLevel = getXpForLevel(user.level + 1);
-
-          let rankPrefix = `${index + 1}.`;
-          if (index === 0) rankPrefix = '🥇';
-          else if (index === 1) rankPrefix = '🥈';
-          else if (index === 2) rankPrefix = '🥉';
-          else rankPrefix = `**${index + 1}.**`;
+const rankPrefix =
+    index === 0 ? '🥇' :
+    index === 1 ? '🥈' :
+    index === 2 ? '🥉' :
+    `**${index + 1}.**`;
 
           return `${rankPrefix} ${userMention} - Level ${user.level} (${user.xp}/${xpForNextLevel} XP)`;
         } catch {
