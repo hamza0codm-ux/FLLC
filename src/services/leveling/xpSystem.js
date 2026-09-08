@@ -14,7 +14,6 @@ import {
     logEvent,
 } from '../loggingService.js';
 import { Mutex } from '../../utils/mutex.js';
-import { wrapServiceBoundary } from '../../utils/serviceBoundary.js';
 
 
 // ============================================================
