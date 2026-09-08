@@ -1,3 +1,4 @@
+import { EmbedBuilder } from 'discord.js';
 import { logger } from '../../utils/logger.js';
 
 import {
@@ -102,10 +103,9 @@ const LEVEL_UP_BANNER =
 | Weekly Peach multipliers
 |--------------------------------------------------------------------------
 |
-| Level 35+ receives one multiplier for the current week.
-|
-| The multiplier changes automatically every week.
-| Everyone receives the same weekly multiplier.
+| Level 35+ receives a weekly XP multiplier.
+| The multiplier automatically changes every week.
+| Everyone receives the same multiplier for the week.
 |
 |--------------------------------------------------------------------------
 */
@@ -116,6 +116,12 @@ const PEACH_WEEKLY_MULTIPLIERS = [
     1.75,
     2.00,
 ];
+
+/*
+|--------------------------------------------------------------------------
+| ISO Week
+|--------------------------------------------------------------------------
+*/
 
 function getISOWeekNumber(date = new Date()) {
     const target = new Date(
@@ -147,17 +153,21 @@ function getISOWeekNumber(date = new Date()) {
     return Math.ceil(
         (
             (
-                (
-                    target -
-                    yearStart
-                ) /
-                86400000
-            ) +
+                target -
+                yearStart
+            ) /
+            86400000 +
             1
         ) /
         7
     );
 }
+
+/*
+|--------------------------------------------------------------------------
+| Get Peach Multiplier
+|--------------------------------------------------------------------------
+*/
 
 export function getPeachMultiplier(
     date = new Date()
@@ -217,7 +227,7 @@ export const addXp =
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Peach bonus
+                    | Peach XP Bonus
                     |--------------------------------------------------------------------------
                     */
 
@@ -262,6 +272,12 @@ export const addXp =
                     let reachedReward =
                         null;
 
+                    /*
+                    |--------------------------------------------------------------------------
+                    | Level Progression
+                    |--------------------------------------------------------------------------
+                    */
+
                     while (
                         levelData.xp >=
                             xpNeededForNextLevel &&
@@ -284,6 +300,12 @@ export const addXp =
                             `🎉 ${member.user.tag} leveled up to level ${levelData.level} in ${guild.name}`
                         );
 
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Reward Role
+                        |--------------------------------------------------------------------------
+                        */
+
                         const reward =
                             LEVEL_REWARDS[
                                 levelData.level
@@ -304,7 +326,7 @@ export const addXp =
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Save BEFORE announcement
+                    | Save Before Announcement
                     |--------------------------------------------------------------------------
                     */
 
@@ -317,13 +339,11 @@ export const addXp =
 
                     /*
                     |--------------------------------------------------------------------------
-                    | Level-up announcement
+                    | Level-up Announcement
                     |--------------------------------------------------------------------------
                     */
 
-                    if (
-                        didLevelUp
-                    ) {
+                    if (didLevelUp) {
                         await sendLevelUpAnnouncement(
                             guild,
                             member,
@@ -331,13 +351,22 @@ export const addXp =
                             reachedReward
                         );
 
+                        /*
+                        |--------------------------------------------------------------------------
+                        | Level-up Logging
+                        |--------------------------------------------------------------------------
+                        */
+
                         try {
                             await logEvent({
                                 client,
+
                                 guildId:
                                     guild.id,
+
                                 eventType:
                                     EVENT_TYPES.LEVELING_LEVELUP,
+
                                 data: {
                                     title:
                                         'Level Up',
@@ -427,7 +456,7 @@ export const addXp =
 
 /*
 |--------------------------------------------------------------------------
-| Award reward role
+| Award Reward Role
 |--------------------------------------------------------------------------
 */
 
@@ -454,6 +483,10 @@ async function awardRoleReward(
             return;
         }
 
+        /*
+        | Don't add the same role twice.
+        */
+
         if (
             member.roles.cache.has(
                 roleId
@@ -470,6 +503,7 @@ async function awardRoleReward(
         logger.info(
             `✅ Awarded ${role.name} to ${member.user.tag} for reaching level ${level}`
         );
+
     } catch (error) {
         logger.error(
             `Failed to award level ${level} role to ${member.user.id}:`,
@@ -480,7 +514,7 @@ async function awardRoleReward(
 
 /*
 |--------------------------------------------------------------------------
-| Level-up announcement
+| Level-up Announcement
 |--------------------------------------------------------------------------
 */
 
@@ -496,7 +530,9 @@ async function sendLevelUpAnnouncement(
                 LEVEL_UP_CHANNEL_ID
             ) ||
             await guild.channels
-                .fetch(LEVEL_UP_CHANNEL_ID)
+                .fetch(
+                    LEVEL_UP_CHANNEL_ID
+                )
                 .catch(() => null);
 
         if (
@@ -509,6 +545,12 @@ async function sendLevelUpAnnouncement(
 
             return;
         }
+
+        /*
+        |--------------------------------------------------------------------------
+        | Check Permissions
+        |--------------------------------------------------------------------------
+        */
 
         const permissions =
             channel.permissionsFor(
@@ -529,31 +571,58 @@ async function sendLevelUpAnnouncement(
             return;
         }
 
+        /*
+        |--------------------------------------------------------------------------
+        | Reward Display
+        |--------------------------------------------------------------------------
+        |
+        | If the user reached a reward level, mention
+        | the actual Discord role.
+        |
+        | Example:
+        |
+        | Congrats @Ghost you level up'ed to <@&123456789>!
+        |
+        |--------------------------------------------------------------------------
+        */
+
         const rewardText =
             reward
-                ? `**${reward.name}**`
+                ? `<@&${reward.roleId}>`
                 : `**Level ${levelData.level}**`;
 
         const embed =
             new EmbedBuilder()
                 .setColor(0xF8D568)
+
                 .setDescription(
-                    `Congrats ${member}! You level up'ed to ${rewardText}!`
+                    `Congrats ${member} you level up'ed to ${rewardText}!`
                 )
+
                 .setImage(
                     LEVEL_UP_BANNER
                 )
+
                 .setTimestamp();
 
         await channel.send({
-            embeds: [embed],
+            embeds: [
+                embed
+            ],
 
             allowedMentions: {
                 users: [
-                    member.user.id,
+                    member.user.id
                 ],
+
+                roles: reward
+                    ? [
+                        reward.roleId
+                    ]
+                    : [],
             },
         });
+
     } catch (error) {
         logger.error(
             'Error sending level-up announcement:',
