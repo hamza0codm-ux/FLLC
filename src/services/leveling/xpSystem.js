@@ -470,20 +470,3 @@ export {
     getPeachMultiplier,
     getISOWeekNumber,
 };
-```
-
-### What changed
-
-The important part is now:
-
-```js
-const previousRoles =
-    member.roles.cache.filter(
-        role =>
-            levelingRoleIds.includes(role.id) &&
-            role.id !== reward.roleId
-    );
-
-for (const role of previousRoles.values()) {
-    await member.roles.remove(role.id);
-}
