@@ -7,12 +7,9 @@ import {
     getXpForLevel,
 } from './leveling.js';
 
-import {
-    getLoggingConfig,
-    logEvent,
-} from '../loggingService.js';
-import { Mutex } from '../../utils/mutex.js';
+import { logEvent } from '../loggingService.js';
 
+import { Mutex } from '../../utils/mutex.js';
 
 // ============================================================
 // LEVEL REWARDS
