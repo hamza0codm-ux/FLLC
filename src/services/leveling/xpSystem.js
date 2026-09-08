@@ -1,114 +1,100 @@
-import { EmbedBuilder } from 'discord.js';
 import { logger } from '../../utils/logger.js';
 
 import {
     getLevelingConfig,
+    getUserLevel,
+    saveUserLevel,
     getXpForLevel,
-    getUserLevelData,
-    saveUserLevelData,
 } from './leveling.js';
 
+import { getLevelingUserKey } from './leveling.js';
+
 import {
+    getLoggingConfig,
     logEvent,
-    EVENT_TYPES,
-} from '../loggingService.js';
+} from '../logging/loggingService.js';
 
-import { formatLogLine } from '../../utils/logging/logEmbeds.js';
+import { formatLogLine } from '../../utils/logFormatter.js';
 import { Mutex } from '../../utils/mutex.js';
-import { wrapServiceBoundary } from '../../utils/errorHandler.js';
+import { wrapServiceBoundary } from '../../utils/serviceBoundary.js';
 
-/*
-|--------------------------------------------------------------------------
-| Fruity Level Rewards
-|--------------------------------------------------------------------------
-*/
 
-export const LEVEL_REWARDS = {
-    5: {
+// ============================================================
+// LEVEL REWARDS
+// ============================================================
+
+export const LEVEL_REWARDS = [
+    {
+        level: 5,
         roleId: '1545924954162470962',
         name: 'Orange',
     },
-
-    10: {
+    {
+        level: 10,
         roleId: '1545924957710852247',
         name: 'Apple',
     },
-
-    15: {
+    {
+        level: 15,
         roleId: '1545924960743198770',
         name: 'Strawberry',
     },
-
-    20: {
+    {
+        level: 20,
         roleId: '1545924963226230885',
         name: 'Watermelon',
     },
-
-    25: {
+    {
+        level: 25,
         roleId: '1545924966267093094',
         name: 'Kiwi',
     },
-
-    30: {
+    {
+        level: 30,
         roleId: '1545924968515108896',
         name: 'Pineapple',
     },
-
-    35: {
+    {
+        level: 35,
         roleId: '1545924970679640085',
         name: 'Peach',
     },
-
-    40: {
+    {
+        level: 40,
         roleId: '1545924973573443667',
         name: 'Banana',
     },
-
-    50: {
+    {
+        level: 50,
         roleId: '1545924976756920430',
         name: 'Mango',
     },
-
-    75: {
+    {
+        level: 75,
         roleId: '1545924979420303522',
         name: 'Cherry',
     },
-
-    100: {
+    {
+        level: 100,
         roleId: '1545924982025093260',
         name: 'DragonFruit',
     },
-};
+];
 
-/*
-|--------------------------------------------------------------------------
-| Level-up channel
-|--------------------------------------------------------------------------
-*/
 
-const LEVEL_UP_CHANNEL_ID =
-    '1546846929676148766';
+// ============================================================
+// LEVEL-UP ANNOUNCEMENT
+// ============================================================
 
-/*
-|--------------------------------------------------------------------------
-| Level-up banner
-|--------------------------------------------------------------------------
-*/
+const LEVEL_UP_CHANNEL_ID = '1546846929676148766';
 
 const LEVEL_UP_BANNER =
-    'https://media.discordapp.net/attachments/1380169626171871282/1546404727149826058/9.jpg?ex=6aa0faa1&is=6a9fa921&hm=8fce4624c07836bc967b6980c3da4a8b30aab7d6037c27e80f374155effab04b&=&format=webp&width=2048&height=682';
+    'https://media.discordapp.net/attachments/1380169626171871282/1546404727149826058/9.jpg?ex=6aa0faa1&is=6a9fa921&hm=8f35ce4624c078bc967b6980c3da4a8b30aab7d6037c27e80f374155effab04b&=&format=webp&width=2048&height=682';
 
-/*
-|--------------------------------------------------------------------------
-| Weekly Peach multipliers
-|--------------------------------------------------------------------------
-|
-| Level 35+ receives a weekly XP multiplier.
-| The multiplier automatically changes every week.
-| Everyone receives the same multiplier for the week.
-|
-|--------------------------------------------------------------------------
-*/
+
+// ============================================================
+// PEACH WEEKLY XP MULTIPLIER
+// ============================================================
 
 const PEACH_WEEKLY_MULTIPLIERS = [
     1.25,
@@ -116,12 +102,6 @@ const PEACH_WEEKLY_MULTIPLIERS = [
     1.75,
     2.00,
 ];
-
-/*
-|--------------------------------------------------------------------------
-| ISO Week
-|--------------------------------------------------------------------------
-*/
 
 function getISOWeekNumber(date = new Date()) {
     const target = new Date(
@@ -132,494 +112,378 @@ function getISOWeekNumber(date = new Date()) {
         )
     );
 
-    const dayNumber =
-        target.getUTCDay() || 7;
+    const dayNumber = target.getUTCDay() || 7;
 
     target.setUTCDate(
-        target.getUTCDate() +
-        4 -
-        dayNumber
+        target.getUTCDate() + 4 - dayNumber
     );
 
-    const yearStart =
-        new Date(
-            Date.UTC(
-                target.getUTCFullYear(),
-                0,
-                1
-            )
-        );
+    const yearStart = new Date(
+        Date.UTC(
+            target.getUTCFullYear(),
+            0,
+            1
+        )
+    );
 
     return Math.ceil(
         (
             (
-                target -
-                yearStart
-            ) /
-            86400000 +
-            1
-        ) /
-        7
+                (target - yearStart) / 86400000
+            ) + 1
+        ) / 7
     );
 }
 
-/*
-|--------------------------------------------------------------------------
-| Get Peach Multiplier
-|--------------------------------------------------------------------------
-*/
 
-export function getPeachMultiplier(
-    date = new Date()
-) {
-    const week =
-        getISOWeekNumber(date);
+function getPeachMultiplier() {
+    const week = getISOWeekNumber();
 
     return PEACH_WEEKLY_MULTIPLIERS[
-        (week - 1) %
-        PEACH_WEEKLY_MULTIPLIERS.length
+        (week - 1) % PEACH_WEEKLY_MULTIPLIERS.length
     ];
 }
 
-/*
-|--------------------------------------------------------------------------
-| Award XP
-|--------------------------------------------------------------------------
-*/
 
-export const addXp =
-    wrapServiceBoundary(
-        async function addXp(
-            client,
-            guild,
-            member,
-            baseXp
-        ) {
-            const lockKey =
-                `leveling:${guild.id}:${member.user.id}`;
+// ============================================================
+// XP MUTEX
+// ============================================================
 
-            return await Mutex.runExclusive(
-                lockKey,
-                async () => {
-                    if (
-                        !baseXp ||
-                        baseXp <= 0
-                    ) {
-                        return null;
-                    }
+const xpMutexes = new Map();
 
-                    const config =
-                        await getLevelingConfig(
-                            client,
-                            guild.id
-                        );
+function getXpMutex(guildId, userId) {
+    const key = `${guildId}:${userId}`;
 
-                    if (!config.enabled) {
-                        return null;
-                    }
+    if (!xpMutexes.has(key)) {
+        xpMutexes.set(key, new Mutex());
+    }
 
-                    const levelData =
-                        await getUserLevelData(
-                            client,
-                            guild.id,
-                            member.user.id
-                        );
+    return xpMutexes.get(key);
+}
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Peach XP Bonus
-                    |--------------------------------------------------------------------------
-                    */
 
-                    let xpToAdd =
-                        Number(baseXp);
+// ============================================================
+// ADD XP
+// ============================================================
 
-                    const currentMultiplier =
-                        levelData.level >= 35
-                            ? getPeachMultiplier()
-                            : 1;
+export const addXp = wrapServiceBoundary(
+    async (
+        client,
+        guildId,
+        userId,
+        amount,
+        member = null
+    ) => {
+        const mutex = getXpMutex(guildId, userId);
 
-                    xpToAdd =
-                        Math.floor(
-                            xpToAdd *
-                            currentMultiplier
-                        );
+        return mutex.runExclusive(async () => {
+            const levelingConfig =
+                await getLevelingConfig(
+                    client,
+                    guildId
+                );
 
-                    if (xpToAdd <= 0) {
-                        return null;
-                    }
+            if (!levelingConfig?.enabled) {
+                return null;
+            }
 
-                    levelData.xp +=
-                        xpToAdd;
+            let levelData =
+                await getUserLevel(
+                    client,
+                    guildId,
+                    userId
+                );
 
-                    levelData.totalXp +=
-                        xpToAdd;
+            if (!levelData) {
+                levelData = {
+                    level: 0,
+                    xp: 0,
+                    totalXp: 0,
+                    lastMessage: null,
+                };
+            }
 
-                    levelData.lastMessage =
-                        Date.now();
+            // ====================================================
+            // PEACH MULTIPLIER
+            // ====================================================
 
-                    let xpNeededForNextLevel =
-                        getXpForLevel(
+            let multiplier = 1;
+
+            if (levelData.level >= 35) {
+                multiplier = getPeachMultiplier();
+            }
+
+            const boostedAmount = Math.floor(
+                amount * multiplier
+            );
+
+            levelData.xp += boostedAmount;
+            levelData.totalXp += boostedAmount;
+            levelData.lastMessage = Date.now();
+
+            let leveledUp = false;
+            let reward = null;
+
+            // ====================================================
+            // LEVEL UP
+            // ====================================================
+
+            while (
+                levelData.level < 1000 &&
+                levelData.xp >=
+                    getXpForLevel(levelData.level)
+            ) {
+                levelData.xp -=
+                    getXpForLevel(levelData.level);
+
+                levelData.level += 1;
+                leveledUp = true;
+
+                const newReward =
+                    LEVEL_REWARDS.find(
+                        rewardItem =>
+                            rewardItem.level ===
                             levelData.level
-                        );
-
-                    let didLevelUp =
-                        false;
-
-                    const initialLevel =
-                        levelData.level;
-
-                    let reachedReward =
-                        null;
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Level Progression
-                    |--------------------------------------------------------------------------
-                    */
-
-                    while (
-                        levelData.xp >=
-                            xpNeededForNextLevel &&
-                        levelData.level < 1000
-                    ) {
-                        levelData.xp -=
-                            xpNeededForNextLevel;
-
-                        levelData.level += 1;
-
-                        didLevelUp =
-                            true;
-
-                        xpNeededForNextLevel =
-                            getXpForLevel(
-                                levelData.level
-                            );
-
-                        logger.info(
-                            `🎉 ${member.user.tag} leveled up to level ${levelData.level} in ${guild.name}`
-                        );
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | Reward Role
-                        |--------------------------------------------------------------------------
-                        */
-
-                        const reward =
-                            LEVEL_REWARDS[
-                                levelData.level
-                            ];
-
-                        if (reward) {
-                            reachedReward =
-                                reward;
-
-                            await awardRoleReward(
-                                guild,
-                                member,
-                                reward.roleId,
-                                levelData.level
-                            );
-                        }
-                    }
-
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Save Before Announcement
-                    |--------------------------------------------------------------------------
-                    */
-
-                    await saveUserLevelData(
-                        client,
-                        guild.id,
-                        member.user.id,
-                        levelData
                     );
 
-                    /*
-                    |--------------------------------------------------------------------------
-                    | Level-up Announcement
-                    |--------------------------------------------------------------------------
-                    */
-
-                    if (didLevelUp) {
-                        await sendLevelUpAnnouncement(
-                            guild,
-                            member,
-                            levelData,
-                            reachedReward
-                        );
-
-                        /*
-                        |--------------------------------------------------------------------------
-                        | Level-up Logging
-                        |--------------------------------------------------------------------------
-                        */
-
-                        try {
-                            await logEvent({
-                                client,
-
-                                guildId:
-                                    guild.id,
-
-                                eventType:
-                                    EVENT_TYPES.LEVELING_LEVELUP,
-
-                                data: {
-                                    title:
-                                        'Level Up',
-
-                                    lines: [
-                                        formatLogLine(
-                                            'Member',
-                                            `${member.user.tag} (\`${member.user.id}\`)`
-                                        ),
-
-                                        formatLogLine(
-                                            'New Level',
-                                            levelData.level.toString()
-                                        ),
-
-                                        formatLogLine(
-                                            'Levels Gained',
-                                            (
-                                                levelData.level -
-                                                initialLevel
-                                            ).toString()
-                                        ),
-
-                                        formatLogLine(
-                                            'Total XP',
-                                            levelData.totalXp.toString()
-                                        ),
-
-                                        reachedReward
-                                            ? formatLogLine(
-                                                'Reward',
-                                                reachedReward.name
-                                            )
-                                            : null,
-                                    ].filter(Boolean),
-
-                                    userId:
-                                        member.user.id,
-                                },
-                            });
-                        } catch (logError) {
-                            logger.debug(
-                                'Failed to log leveling event:',
-                                logError.message
-                            );
-                        }
-                    }
-
-                    return {
-                        level:
-                            levelData.level,
-
-                        xp:
-                            levelData.xp,
-
-                        totalXp:
-                            levelData.totalXp,
-
-                        xpNeeded:
-                            getXpForLevel(
-                                levelData.level
-                            ),
-
-                        multiplier:
-                            currentMultiplier,
-
-                        reward:
-                            reachedReward,
-
-                        leveledUp:
-                            didLevelUp,
-                    };
+                if (newReward) {
+                    reward = newReward;
                 }
+            }
+
+            // ====================================================
+            // SAVE FIRST
+            // ====================================================
+
+            await saveUserLevel(
+                client,
+                guildId,
+                userId,
+                levelData
             );
-        },
-        {
-            service:
-                'xpSystem',
 
-            operation:
-                'addXp',
+            // ====================================================
+            // HANDLE LEVEL REWARD
+            // ====================================================
 
-            userMessage:
-                'Failed to award XP. Please try again.',
-        }
-    );
+            if (
+                leveledUp &&
+                reward &&
+                member
+            ) {
+                await awardRoleReward(
+                    member,
+                    reward
+                );
+            }
 
-/*
-|--------------------------------------------------------------------------
-| Award Reward Role
-|--------------------------------------------------------------------------
-*/
+            // ====================================================
+            // LEVEL-UP ANNOUNCEMENT
+            // ====================================================
 
-async function awardRoleReward(
-    guild,
-    member,
-    roleId,
-    level
-) {
+            if (leveledUp && member) {
+                await sendLevelUpAnnouncement(
+                    member,
+                    levelData,
+                    reward
+                );
+            }
+
+            // ====================================================
+            // LOG
+            // ====================================================
+
+            if (leveledUp) {
+                try {
+                    await logEvent({
+                        client,
+                        guildId,
+                        type: 'LEVEL_UP',
+                        userId,
+                        data: {
+                            level: levelData.level,
+                            reward: reward?.name ?? null,
+                        },
+                    });
+                } catch (error) {
+                    logger.warn(
+                        `Failed to log level-up for ${userId}:`,
+                        error
+                    );
+                }
+            }
+
+            return {
+                level: levelData.level,
+                xp: levelData.xp,
+                totalXp: levelData.totalXp,
+                xpNeeded: getXpForLevel(
+                    levelData.level
+                ),
+                multiplier,
+                reward,
+                leveledUp,
+            };
+        });
+    },
+    {
+        name: 'addXp',
+    }
+);
+
+
+// ============================================================
+// AWARD LEVEL ROLE
+// ============================================================
+
+async function awardRoleReward(member, reward) {
+    if (!reward?.roleId) {
+        return;
+    }
+
     try {
-        const role =
-            guild.roles.cache.get(
-                roleId
-            ) ||
-            await guild.roles
-                .fetch(roleId)
-                .catch(() => null);
+        const levelingRoleIds =
+            LEVEL_REWARDS
+                .map(rewardItem => rewardItem.roleId)
+                .filter(Boolean);
 
-        if (!role) {
-            logger.warn(
-                `Role ${roleId} not found for level ${level} reward in guild ${guild.id}`
+        // --------------------------------------------------------
+        // Remove ALL previous leveling roles
+        // --------------------------------------------------------
+
+        const previousRoles =
+            member.roles.cache.filter(
+                role =>
+                    levelingRoleIds.includes(role.id) &&
+                    role.id !== reward.roleId
             );
 
-            return;
+        for (const role of previousRoles.values()) {
+            try {
+                await member.roles.remove(
+                    role.id,
+                    'Leveling: replacing previous reward role'
+                );
+            } catch (error) {
+                logger.warn(
+                    `Failed to remove old leveling role ${role.id} from ${member.user.tag}:`,
+                    error
+                );
+            }
         }
 
-        /*
-        | Don't add the same role twice.
-        */
+        // --------------------------------------------------------
+        // Add the new highest/current leveling role
+        // --------------------------------------------------------
 
         if (
-            member.roles.cache.has(
-                roleId
+            !member.roles.cache.has(
+                reward.roleId
             )
         ) {
-            return;
+            await member.roles.add(
+                reward.roleId,
+                `Level ${reward.level} reward`
+            );
         }
 
-        await member.roles.add(
-            role,
-            `Fruity Level ${level} reward`
+        logger.debug(
+            `Level reward updated for ${member.user.tag}: ${reward.name}`
         );
-
-        logger.info(
-            `✅ Awarded ${role.name} to ${member.user.tag} for reaching level ${level}`
-        );
-
     } catch (error) {
         logger.error(
-            `Failed to award level ${level} role to ${member.user.id}:`,
+            `Failed to award level reward ${reward.name} to ${member.user.tag}:`,
             error
         );
     }
 }
 
-/*
-|--------------------------------------------------------------------------
-| Level-up Announcement
-|--------------------------------------------------------------------------
-*/
+
+// ============================================================
+// LEVEL-UP ANNOUNCEMENT
+// ============================================================
 
 async function sendLevelUpAnnouncement(
-    guild,
     member,
     levelData,
     reward
 ) {
     try {
         const channel =
-            guild.channels.cache.get(
+            await member.client.channels.fetch(
                 LEVEL_UP_CHANNEL_ID
-            ) ||
-            await guild.channels
-                .fetch(
-                    LEVEL_UP_CHANNEL_ID
-                )
-                .catch(() => null);
-
-        if (
-            !channel ||
-            !channel.isTextBased()
-        ) {
-            logger.warn(
-                `Level-up channel ${LEVEL_UP_CHANNEL_ID} was not found.`
             );
 
+        if (!channel) {
+            logger.warn(
+                `Level-up channel ${LEVEL_UP_CHANNEL_ID} not found.`
+            );
             return;
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Check Permissions
-        |--------------------------------------------------------------------------
-        */
-
-        const permissions =
-            channel.permissionsFor(
-                guild.members.me
-            );
-
-        if (
-            !permissions ||
-            !permissions.has([
-                'SendMessages',
-                'EmbedLinks',
-            ])
-        ) {
+        if (!channel.isTextBased()) {
             logger.warn(
-                `Missing permissions for level-up channel ${LEVEL_UP_CHANNEL_ID}`
+                `Level-up channel ${LEVEL_UP_CHANNEL_ID} is not text-based.`
             );
-
             return;
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Reward Display
-        |--------------------------------------------------------------------------
-        |
-        | If the user reached a reward level, mention
-        | the actual Discord role.
-        |
-        | Example:
-        |
-        | Congrats @Ghost you level up'ed to <@&123456789>!
-        |
-        |--------------------------------------------------------------------------
-        */
+        const rewardText = reward
+            ? `**${reward.name}**`
+            : `**Level ${levelData.level}**`;
 
-      const rewardText =
-    reward
-        ? `**${reward.name}**`
-        : `**Level ${levelData.level}**`;
-        
-        const embed =
-            new EmbedBuilder()
-                .setColor(0xF8D568)
-
-                .setDescription(
-                    `Congrats ${member} you level up'ed to ${rewardText}!`
-                )
-
-                .setImage(
-                    LEVEL_UP_BANNER
-                )
-
-                .setTimestamp();
+        const embed = {
+            color: 0xf1c40f,
+            description:
+                `Congrats ${member} you level up'ed to ${rewardText}!`,
+            image: {
+                url: LEVEL_UP_BANNER,
+            },
+            footer: {
+                text: `Level ${levelData.level}`,
+            },
+        };
 
         await channel.send({
-            embeds: [
-                embed
-            ],
-  allowedMentions: {
-        users: [
-            member.user.id
-        ],
-    },
-});
-
+            content: `<@${member.user.id}>`,
+            embeds: [embed],
+            allowedMentions: {
+                users: [
+                    member.user.id,
+                ],
+            },
+        });
     } catch (error) {
         logger.error(
-            'Error sending level-up announcement:',
+            `Failed to send level-up announcement for ${member.user.tag}:`,
             error
         );
     }
+}
+
+
+// ============================================================
+// EXPORT HELPERS
+// ============================================================
+
+export {
+    getPeachMultiplier,
+    getISOWeekNumber,
+};
+```
+
+### What changed
+
+The important part is now:
+
+```js
+const previousRoles =
+    member.roles.cache.filter(
+        role =>
+            levelingRoleIds.includes(role.id) &&
+            role.id !== reward.roleId
+    );
+
+for (const role of previousRoles.values()) {
+    await member.roles.remove(role.id);
 }
