@@ -609,19 +609,12 @@ async function sendLevelUpAnnouncement(
             embeds: [
                 embed
             ],
-
-            allowedMentions: {
-                users: [
-                    member.user.id
-                ],
-
-                roles: reward
-                    ? [
-                        reward.roleId
-                    ]
-                    : [],
-            },
-        });
+  allowedMentions: {
+        users: [
+            member.user.id
+        ],
+    },
+});
 
     } catch (error) {
         logger.error(
