@@ -13,8 +13,6 @@ import {
     getLoggingConfig,
     logEvent,
 } from '../loggingService.js';
-
-import { formatLogLine } from '../../utils/logFormatter.js';
 import { Mutex } from '../../utils/mutex.js';
 import { wrapServiceBoundary } from '../../utils/serviceBoundary.js';
 
