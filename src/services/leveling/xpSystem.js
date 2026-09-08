@@ -7,8 +7,6 @@ import {
     getXpForLevel,
 } from './leveling.js';
 
-import { getLevelingUserKey } from './leveling.js';
-
 import {
     getLoggingConfig,
     logEvent,
