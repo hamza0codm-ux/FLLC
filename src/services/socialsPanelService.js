@@ -26,6 +26,7 @@ id: '1545132417021648979',
 },
 },
 
+
 youtube: {
     label: 'YouTube',
     url: 'https://www.youtube.com/@FruityINC',
@@ -50,9 +51,6 @@ tiktok: {
 function createSocialsPanel() {
 const container = new ContainerBuilder()
 .setAccentColor(0xF8D568)
-
-
-    // Header
     .addTextDisplayComponents(
         new TextDisplayBuilder().setContent(
             '# Fruity Socials\n' +
@@ -62,7 +60,7 @@ const container = new ContainerBuilder()
 
     .addSeparatorComponents(
         new SeparatorBuilder()
-            .setSpacing(SeparatorSpacingSize.Small)
+            .setSpacing(SeparatorSpacingSize.Large)
     );
 
 // Twitter / X
@@ -70,7 +68,7 @@ container.addSectionComponents(
     new SectionBuilder()
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '**Twitter / X**\n' +
+                `<:TwitterX:${SOCIALS.twitter.emoji.id}>  **Twitter / X**\n` +
                 'Follow Fruity for the latest updates, announcements and news.'
             )
         )
@@ -83,12 +81,17 @@ container.addSectionComponents(
         )
 );
 
+container.addSeparatorComponents(
+    new SeparatorBuilder()
+        .setSpacing(SeparatorSpacingSize.Large)
+);
+
 // YouTube
 container.addSectionComponents(
     new SectionBuilder()
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '**YouTube**\n' +
+                `<:YouTube:${SOCIALS.youtube.emoji.id}>  **YouTube**\n` +
                 'Watch Fruity videos, updates and community content.'
             )
         )
@@ -101,12 +104,17 @@ container.addSectionComponents(
         )
 );
 
+container.addSeparatorComponents(
+    new SeparatorBuilder()
+        .setSpacing(SeparatorSpacingSize.Large)
+);
+
 // TikTok
 container.addSectionComponents(
     new SectionBuilder()
         .addTextDisplayComponents(
             new TextDisplayBuilder().setContent(
-                '**TikTok**\n' +
+                `<:TikTok:${SOCIALS.tiktok.emoji.id}>  **TikTok**\n` +
                 'Check out Fruity on TikTok for short-form content and updates.'
             )
         )
@@ -121,10 +129,10 @@ container.addSectionComponents(
 
 container.addSeparatorComponents(
     new SeparatorBuilder()
-        .setSpacing(SeparatorSpacingSize.Small)
+        .setSpacing(SeparatorSpacingSize.Large)
 );
 
-// Banner image at the bottom
+// Banner image
 const image = new MediaGalleryBuilder().addItems(
     new MediaGalleryItemBuilder().setURL(SOCIALS_IMAGE)
 );
@@ -133,6 +141,7 @@ container.addMediaGalleryComponents(image);
 
 return container;
 
+
 }
 
 export async function reconcileSocialsPanel(client) {
@@ -140,6 +149,7 @@ try {
 const channel = await client.channels
 .fetch(SOCIALS_CHANNEL_ID)
 .catch(() => null);
+
 
     if (!channel || !channel.isTextBased()) {
         return {
@@ -152,7 +162,6 @@ const channel = await client.channels
         limit: 20,
     });
 
-    // Look for an existing Fruity Socials V2 panel.
     const existingPanel = messages.find((message) => {
         if (message.author?.id !== client.user.id) {
             return false;
@@ -172,7 +181,6 @@ const channel = await client.channels
         });
     });
 
-    // Already exists — do nothing.
     if (existingPanel) {
         return {
             action: 'unchanged',
@@ -180,7 +188,6 @@ const channel = await client.channels
         };
     }
 
-    // No panel exists, so create it.
     const panel = createSocialsPanel();
 
     const message = await channel.send({
@@ -198,4 +205,6 @@ const channel = await client.channels
         error: error?.message ?? String(error),
     };
 }
+
+
 }
