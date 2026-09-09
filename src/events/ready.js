@@ -180,20 +180,39 @@ export default {
 
       } else if (
         suggestionPanelSummary.action ===
-        'updated'
+        'replaced'
       ) {
 
         startupLog(
           `Suggestion panel updated: ${suggestionPanelSummary.messageId}`
         );
 
-      } else {
+      } else if (
+        suggestionPanelSummary.action ===
+        'unchanged'
+      ) {
+
+        startupLog(
+          `Suggestion panel unchanged: ${suggestionPanelSummary.messageId}`
+        );
+
+      } else if (
+        suggestionPanelSummary.action ===
+        'error'
+      ) {
 
         logger.error(
-          `Suggestion panel error: ${suggestionPanelSummary.error}`
+          `Suggestion panel error: ${suggestionPanelSummary.error ?? 'Unknown error'}`
+        );
+
+      } else {
+
+        logger.warn(
+          `Suggestion panel returned unexpected action: ${suggestionPanelSummary.action ?? 'undefined'}`
         );
 
       }
+
 
     } catch (error) {
 
