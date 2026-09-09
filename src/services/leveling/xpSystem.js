@@ -9,8 +9,6 @@ import {
 
 import { logEvent } from '../loggingService.js';
 
-import { Mutex } from '../../utils/mutex.js';
-
 // ============================================================
 // LEVEL REWARDS
 // ============================================================
@@ -134,22 +132,6 @@ function getPeachMultiplier() {
 }
 
 // ============================================================
-// XP MUTEX
-// ============================================================
-
-const xpMutexes = new Map();
-
-function getXpMutex(guildId, userId) {
-    const key = `${guildId}:${userId}`;
-
-    if (!xpMutexes.has(key)) {
-        xpMutexes.set(key, new Mutex());
-    }
-
-    return xpMutexes.get(key);
-}
-
-// ============================================================
 // ADD XP
 // ============================================================
 
@@ -160,177 +142,174 @@ export const addXp = async (
     amount,
     member = null
 ) => {
-    const mutex = getXpMutex(guildId, userId);
-
-    return mutex.runExclusive(async () => {
-        try {
-            const levelingConfig =
-                await getLevelingConfig(
-                    client,
-                    guildId
-                );
-
-            if (!levelingConfig?.enabled) {
-                return null;
-            }
-
-            let levelData =
-                await getUserLevelData(
-                    client,
-                    guildId,
-                    userId
-                );
-
-            if (!levelData) {
-                levelData = {
-                    level: 0,
-                    xp: 0,
-                    totalXp: 0,
-                    lastMessage: null,
-                    rank: 0,
-                };
-            }
-
-            // ====================================================
-            // VALIDATE XP AMOUNT
-            // ====================================================
-
-            const xpAmount = Number(amount);
-
-            if (!Number.isFinite(xpAmount) || xpAmount <= 0) {
-                return null;
-            }
-
-            // ====================================================
-            // PEACH MULTIPLIER
-            // ====================================================
-
-            let multiplier = 1;
-
-            if (levelData.level >= 35) {
-                multiplier = getPeachMultiplier();
-            }
-
-            const boostedAmount = Math.floor(
-                xpAmount * multiplier
+    try {
+        const levelingConfig =
+            await getLevelingConfig(
+                client,
+                guildId
             );
 
-            levelData.xp += boostedAmount;
-            levelData.totalXp += boostedAmount;
-            levelData.lastMessage = Date.now();
+        if (!levelingConfig?.enabled) {
+            return null;
+        }
 
-            let leveledUp = false;
-            let reward = null;
-
-            // ====================================================
-            // LEVEL UP
-            // ====================================================
-
-            while (
-                levelData.level < 1000 &&
-                levelData.xp >= getXpForLevel(levelData.level)
-            ) {
-                levelData.xp -=
-                    getXpForLevel(levelData.level);
-
-                levelData.level += 1;
-                leveledUp = true;
-
-                const newReward =
-                    LEVEL_REWARDS.find(
-                        rewardItem =>
-                            rewardItem.level ===
-                            levelData.level
-                    );
-
-                if (newReward) {
-                    reward = newReward;
-                }
-            }
-
-            // ====================================================
-            // SAVE FIRST
-            // ====================================================
-
-            await saveUserLevelData(
+        let levelData =
+            await getUserLevelData(
                 client,
                 guildId,
-                userId,
-                levelData
+                userId
             );
 
-            // ====================================================
-            // HANDLE LEVEL REWARD
-            // ====================================================
-
-            if (
-                leveledUp &&
-                reward &&
-                member
-            ) {
-                await awardRoleReward(
-                    member,
-                    reward
-                );
-            }
-
-            // ====================================================
-            // LEVEL-UP ANNOUNCEMENT
-            // ====================================================
-
-            if (leveledUp && member) {
-                await sendLevelUpAnnouncement(
-                    member,
-                    levelData,
-                    reward
-                );
-            }
-
-            // ====================================================
-            // LOG
-            // ====================================================
-
-            if (leveledUp) {
-                try {
-                    await logEvent({
-                        client,
-                        guildId,
-                        eventType: 'leveling.levelup',
-                        data: {
-                            userId,
-                            level: levelData.level,
-                            reward: reward?.name ?? null,
-                        },
-                    });
-                } catch (error) {
-                    logger.warn(
-                        `Failed to log level-up for ${userId}:`,
-                        error
-                    );
-                }
-            }
-
-            return {
-                level: levelData.level,
-                xp: levelData.xp,
-                totalXp: levelData.totalXp,
-                xpNeeded: getXpForLevel(
-                    levelData.level
-                ),
-                multiplier,
-                reward,
-                leveledUp,
+        if (!levelData) {
+            levelData = {
+                level: 0,
+                xp: 0,
+                totalXp: 0,
+                lastMessage: null,
+                rank: 0,
             };
-
-        } catch (error) {
-            logger.error(
-                `Error adding XP for user ${userId} in guild ${guildId}:`,
-                error
-            );
-
-            throw error;
         }
-    });
+
+        // ====================================================
+        // VALIDATE XP AMOUNT
+        // ====================================================
+
+        const xpAmount = Number(amount);
+
+        if (!Number.isFinite(xpAmount) || xpAmount <= 0) {
+            return null;
+        }
+
+        // ====================================================
+        // PEACH MULTIPLIER
+        // ====================================================
+
+        let multiplier = 1;
+
+        if (levelData.level >= 35) {
+            multiplier = getPeachMultiplier();
+        }
+
+        const boostedAmount = Math.floor(
+            xpAmount * multiplier
+        );
+
+        levelData.xp += boostedAmount;
+        levelData.totalXp += boostedAmount;
+        levelData.lastMessage = Date.now();
+
+        let leveledUp = false;
+        let reward = null;
+
+        // ====================================================
+        // LEVEL UP
+        // ====================================================
+
+        while (
+            levelData.level < 1000 &&
+            levelData.xp >=
+                getXpForLevel(levelData.level)
+        ) {
+            levelData.xp -=
+                getXpForLevel(levelData.level);
+
+            levelData.level += 1;
+            leveledUp = true;
+
+            const newReward =
+                LEVEL_REWARDS.find(
+                    rewardItem =>
+                        rewardItem.level ===
+                        levelData.level
+                );
+
+            if (newReward) {
+                reward = newReward;
+            }
+        }
+
+        // ====================================================
+        // SAVE FIRST
+        // ====================================================
+
+        await saveUserLevelData(
+            client,
+            guildId,
+            userId,
+            levelData
+        );
+
+        // ====================================================
+        // HANDLE LEVEL REWARD
+        // ====================================================
+
+        if (
+            leveledUp &&
+            reward &&
+            member
+        ) {
+            await awardRoleReward(
+                member,
+                reward
+            );
+        }
+
+        // ====================================================
+        // LEVEL-UP ANNOUNCEMENT
+        // ====================================================
+
+        if (leveledUp && member) {
+            await sendLevelUpAnnouncement(
+                member,
+                levelData,
+                reward
+            );
+        }
+
+        // ====================================================
+        // LOG
+        // ====================================================
+
+        if (leveledUp) {
+            try {
+                await logEvent({
+                    client,
+                    guildId,
+                    eventType: 'leveling.levelup',
+                    data: {
+                        userId,
+                        level: levelData.level,
+                        reward: reward?.name ?? null,
+                    },
+                });
+            } catch (error) {
+                logger.warn(
+                    `Failed to log level-up for ${userId}:`,
+                    error
+                );
+            }
+        }
+
+        return {
+            level: levelData.level,
+            xp: levelData.xp,
+            totalXp: levelData.totalXp,
+            xpNeeded: getXpForLevel(
+                levelData.level
+            ),
+            multiplier,
+            reward,
+            leveledUp,
+        };
+
+    } catch (error) {
+        logger.error(
+            `Error adding XP for user ${userId} in guild ${guildId}:`,
+            error
+        );
+
+        throw error;
+    }
 };
 
 // ============================================================
@@ -349,7 +328,7 @@ async function awardRoleReward(member, reward) {
                 .filter(Boolean);
 
         // --------------------------------------------------------
-        // REMOVE ALL PREVIOUS LEVELING ROLES
+        // Remove ALL previous leveling roles
         // --------------------------------------------------------
 
         const previousRoles =
@@ -374,7 +353,7 @@ async function awardRoleReward(member, reward) {
         }
 
         // --------------------------------------------------------
-        // ADD CURRENT LEVELING ROLE
+        // Add the new current leveling role
         // --------------------------------------------------------
 
         if (
