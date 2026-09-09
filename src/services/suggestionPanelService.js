@@ -6,6 +6,7 @@ import {
     ButtonBuilder,
     ButtonStyle,
 } from 'discord.js';
+
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
@@ -35,6 +36,30 @@ const LOADING_EMOJI = {
 
 const PANEL_IMAGE =
     'https://media.discordapp.net/attachments/1380169626171871282/1546564480840892446/content.png?ex=6aa03dea&is=6a9eec6a&hm=045e45dbe397a20550ffef10a28971d4f7db835c0c16d70109930216eddd15cf&=&format=webp&quality=lossless&width=768&height=256';
+
+// ============================================================
+// ERROR HELPER
+// ============================================================
+
+function getErrorMessage(error) {
+    if (error instanceof Error) {
+        return error.stack || error.message;
+    }
+
+    if (typeof error === 'string') {
+        return error;
+    }
+
+    try {
+        return JSON.stringify(error, null, 2);
+    } catch {
+        return String(error);
+    }
+}
+
+// ============================================================
+// BUILD PANEL
+// ============================================================
 
 function buildSuggestionPanel() {
     const embed = new EmbedBuilder()
@@ -67,11 +92,18 @@ function buildSuggestionPanel() {
     };
 }
 
+// ============================================================
+// PANEL HASH
+// ============================================================
+
 function getPanelHash() {
     const panel = buildSuggestionPanel();
 
     const data = {
-        embeds: panel.embeds.map(embed => embed.toJSON()),
+        embeds: panel.embeds.map(embed =>
+            embed.toJSON()
+        ),
+
         components: panel.components.map(component =>
             component.toJSON()
         ),
@@ -83,227 +115,390 @@ function getPanelHash() {
         .digest('hex');
 }
 
+// ============================================================
+// STATE
+// ============================================================
+
 function loadState() {
     try {
         if (!fs.existsSync(STATE_FILE)) {
             return null;
         }
 
-        return JSON.parse(
-            fs.readFileSync(STATE_FILE, 'utf8')
+        const raw = fs.readFileSync(
+            STATE_FILE,
+            'utf8'
         );
-    } catch {
+
+        if (!raw.trim()) {
+            return null;
+        }
+
+        return JSON.parse(raw);
+    } catch (error) {
+        console.warn(
+            '[SuggestionPanel] Failed to load state:',
+            getErrorMessage(error)
+        );
+
         return null;
     }
 }
 
 function saveState(state) {
-    const directory = path.dirname(STATE_FILE);
+    try {
+        const directory = path.dirname(
+            STATE_FILE
+        );
 
-    if (!fs.existsSync(directory)) {
-        fs.mkdirSync(directory, {
-            recursive: true,
-        });
+        if (!fs.existsSync(directory)) {
+            fs.mkdirSync(directory, {
+                recursive: true,
+            });
+        }
+
+        fs.writeFileSync(
+            STATE_FILE,
+            JSON.stringify(state, null, 2),
+            'utf8'
+        );
+
+        return true;
+    } catch (error) {
+        console.error(
+            '[SuggestionPanel] Failed to save state:',
+            getErrorMessage(error)
+        );
+
+        return false;
     }
-
-    fs.writeFileSync(
-        STATE_FILE,
-        JSON.stringify(state, null, 2)
-    );
 }
 
-async function findPanelById(channel, messageId) {
+// ============================================================
+// FIND PANEL BY MESSAGE ID
+// ============================================================
+
+async function findPanelById(
+    channel,
+    messageId
+) {
     if (!messageId) {
         return null;
     }
 
     try {
-        return await channel.messages.fetch(messageId);
-    } catch {
+        return await channel.messages.fetch(
+            messageId
+        );
+    } catch (error) {
+        console.warn(
+            `[SuggestionPanel] Could not fetch panel ${messageId}:`,
+            getErrorMessage(error)
+        );
+
         return null;
     }
 }
 
-async function findExistingSuggestionPanel(channel, client) {
-    const messages = await channel.messages.fetch({
-        limit: 100,
-    });
+// ============================================================
+// FIND EXISTING PANEL
+// ============================================================
 
-    return (
-        messages.find(message => {
-            if (message.author?.id !== client.user.id) {
-                return false;
-            }
-
-            return message.components?.some(row =>
-                row.components?.some(
-                    component =>
-                        component.customId ===
-                            'suggestion:submit' ||
-                        component.customId ===
-                            'suggestion:status'
-                )
-            );
-        }) || null
-    );
-}
-
-export async function reconcileSuggestionPanel(client) {
+async function findExistingSuggestionPanel(
+    channel,
+    client
+) {
     try {
-        const channel = await client.channels.fetch(
-            PUBLIC_CHANNEL_ID
+        const messages =
+            await channel.messages.fetch({
+                limit: 100,
+            });
+
+        return (
+            messages.find(message => {
+                if (
+                    message.author?.id !==
+                    client.user?.id
+                ) {
+                    return false;
+                }
+
+                return message.components?.some(
+                    row =>
+                        row.components?.some(
+                            component =>
+                                component.customId ===
+                                    'suggestion:submit' ||
+                                component.customId ===
+                                    'suggestion:status'
+                        )
+                );
+            }) || null
+        );
+    } catch (error) {
+        console.error(
+            '[SuggestionPanel] Failed to search for existing panel:',
+            getErrorMessage(error)
         );
 
-        if (!channel || !channel.isTextBased()) {
+        throw error;
+    }
+}
+
+// ============================================================
+// RECONCILE PANEL
+// ============================================================
+
+export async function reconcileSuggestionPanel(
+    client
+) {
+    try {
+        console.log(
+            '[SuggestionPanel] Reconciling suggestion panel...'
+        );
+
+        // --------------------------------------------------------
+        // FETCH CHANNEL
+        // --------------------------------------------------------
+
+        const channel =
+            await client.channels.fetch(
+                PUBLIC_CHANNEL_ID
+            );
+
+        if (!channel) {
             throw new Error(
                 `Suggestion channel ${PUBLIC_CHANNEL_ID} could not be found.`
             );
         }
 
-        const currentHash = getPanelHash();
-        const state = loadState();
-
-        /*
-         * ============================================
-         * FIRST RUN
-         * ============================================
-         *
-         * If we already know the panel and its hash,
-         * check that exact message.
-         */
-        if (state?.messageId && state?.hash) {
-            const existingPanel = await findPanelById(
-                channel,
-                state.messageId
+        if (!channel.isTextBased()) {
+            throw new Error(
+                `Suggestion channel ${PUBLIC_CHANNEL_ID} is not text-based.`
             );
+        }
 
-            // Panel still exists and nothing changed.
+        // --------------------------------------------------------
+        // HASH + STATE
+        // --------------------------------------------------------
+
+        const currentHash =
+            getPanelHash();
+
+        const state =
+            loadState();
+
+        // --------------------------------------------------------
+        // EXISTING SAVED PANEL
+        // --------------------------------------------------------
+
+        if (
+            state?.messageId &&
+            state?.hash
+        ) {
+            const existingPanel =
+                await findPanelById(
+                    channel,
+                    state.messageId
+                );
+
+            // ----------------------------------------------------
+            // NOTHING CHANGED
+            // ----------------------------------------------------
+
             if (
                 existingPanel &&
                 state.hash === currentHash
             ) {
+                console.log(
+                    `[SuggestionPanel] Panel unchanged: ${existingPanel.id}`
+                );
+
                 return {
                     action: 'unchanged',
-                    messageId: existingPanel.id,
-                    channelId: channel.id,
+                    messageId:
+                        existingPanel.id,
+                    channelId:
+                        channel.id,
                 };
             }
 
-            /*
-             * The code changed.
-             *
-             * Send the new panel FIRST.
-             */
-            if (state.hash !== currentHash) {
-                const newPanel = await channel.send(
-                    buildSuggestionPanel()
+            // ----------------------------------------------------
+            // PANEL CODE CHANGED
+            // ----------------------------------------------------
+
+            if (
+                state.hash !==
+                currentHash
+            ) {
+                console.log(
+                    '[SuggestionPanel] Panel changed. Creating new panel...'
                 );
 
-                /*
-                 * Only after the new panel successfully
-                 * exists do we delete the old one.
-                 */
+                const newPanel =
+                    await channel.send(
+                        buildSuggestionPanel()
+                    );
+
+                console.log(
+                    `[SuggestionPanel] New panel created: ${newPanel.id}`
+                );
+
+                // ------------------------------------------------
+                // DELETE OLD PANEL ONLY AFTER NEW ONE WORKS
+                // ------------------------------------------------
+
                 if (existingPanel) {
                     try {
                         await existingPanel.delete(
                             'Suggestion panel updated'
                         );
+
+                        console.log(
+                            `[SuggestionPanel] Old panel deleted: ${existingPanel.id}`
+                        );
                     } catch (error) {
                         console.warn(
-                            'Could not delete old suggestion panel:',
-                            error
+                            '[SuggestionPanel] Could not delete old panel:',
+                            getErrorMessage(error)
                         );
                     }
                 }
 
                 saveState({
-                    messageId: newPanel.id,
-                    hash: currentHash,
+                    messageId:
+                        newPanel.id,
+                    hash:
+                        currentHash,
                 });
 
                 return {
                     action: 'replaced',
                     oldMessageId:
-                        existingPanel?.id ?? null,
-                    messageId: newPanel.id,
-                    channelId: channel.id,
+                        existingPanel?.id ??
+                        null,
+                    messageId:
+                        newPanel.id,
+                    channelId:
+                        channel.id,
                 };
             }
 
-            /*
-             * State exists but old panel was deleted.
-             * Create a replacement.
-             */
-            const newPanel = await channel.send(
-                buildSuggestionPanel()
+            // ----------------------------------------------------
+            // STATE EXISTS BUT PANEL WAS DELETED
+            // ----------------------------------------------------
+
+            console.log(
+                '[SuggestionPanel] Saved panel no longer exists. Creating replacement...'
             );
 
+            const newPanel =
+                await channel.send(
+                    buildSuggestionPanel()
+                );
+
             saveState({
-                messageId: newPanel.id,
-                hash: currentHash,
+                messageId:
+                    newPanel.id,
+                hash:
+                    currentHash,
             });
 
             return {
                 action: 'created',
-                messageId: newPanel.id,
-                channelId: channel.id,
+                messageId:
+                    newPanel.id,
+                channelId:
+                    channel.id,
             };
         }
 
-        /*
-         * ============================================
-         * MIGRATION / FIRST RUN
-         * ============================================
-         *
-         * We don't have a saved state yet.
-         *
-         * IMPORTANT:
-         * If the panel already exists, DON'T replace it.
-         *
-         * Simply remember its ID and the current code hash.
-         */
+        // --------------------------------------------------------
+        // FIRST RUN / MIGRATION
+        // --------------------------------------------------------
+
+        console.log(
+            '[SuggestionPanel] No saved panel state. Searching for existing panel...'
+        );
+
         const existingPanel =
             await findExistingSuggestionPanel(
                 channel,
                 client
             );
 
+        // --------------------------------------------------------
+        // EXISTING PANEL FOUND
+        // --------------------------------------------------------
+
         if (existingPanel) {
+            console.log(
+                `[SuggestionPanel] Existing panel found: ${existingPanel.id}`
+            );
+
             saveState({
-                messageId: existingPanel.id,
-                hash: currentHash,
+                messageId:
+                    existingPanel.id,
+                hash:
+                    currentHash,
             });
 
             return {
                 action: 'unchanged',
-                messageId: existingPanel.id,
-                channelId: channel.id,
+                messageId:
+                    existingPanel.id,
+                channelId:
+                    channel.id,
             };
         }
 
-        /*
-         * No panel exists at all.
-         */
-        const newPanel = await channel.send(
-            buildSuggestionPanel()
+        // --------------------------------------------------------
+        // NO PANEL EXISTS
+        // --------------------------------------------------------
+
+        console.log(
+            '[SuggestionPanel] No existing panel found. Creating one...'
         );
 
+        const newPanel =
+            await channel.send(
+                buildSuggestionPanel()
+            );
+
         saveState({
-            messageId: newPanel.id,
-            hash: currentHash,
+            messageId:
+                newPanel.id,
+            hash:
+                currentHash,
         });
+
+        console.log(
+            `[SuggestionPanel] Panel created: ${newPanel.id}`
+        );
 
         return {
             action: 'created',
-            messageId: newPanel.id,
-            channelId: channel.id,
+            messageId:
+                newPanel.id,
+            channelId:
+                channel.id,
         };
     } catch (error) {
+        const errorMessage =
+            getErrorMessage(error);
+
+        console.error(
+            '[SuggestionPanel] ERROR:',
+            errorMessage
+        );
+
         return {
             action: 'error',
             messageId: null,
-            channelId: PUBLIC_CHANNEL_ID,
-            error: error.message,
+            channelId:
+                PUBLIC_CHANNEL_ID,
+            error:
+                errorMessage,
         };
     }
 }
