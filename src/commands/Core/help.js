@@ -230,9 +230,7 @@ const helpCommand = {
             const {
                 embeds,
                 components,
-            } = await createInitialHelpMenu(
-                client,
-            );
+            } = await createInitialHelpMenu(client);
 
             await interaction.reply({
                 embeds,
@@ -265,3 +263,10 @@ const helpCommand = {
         }
     },
 };
+
+/*
+ * IMPORTANT:
+ * Export the command so the command loader can find
+ * the required "data" and "execute" properties.
+ */
+export default helpCommand;
