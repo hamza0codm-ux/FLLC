@@ -19,8 +19,6 @@ const EMOJIS = {
 
 const STORAGE_PREFIX = 'guild:';
 const STORAGE_SUFFIX = ':absence:requests';
-
-const PANEL_STORAGE_PREFIX = 'guild:';
 const PANEL_STORAGE_SUFFIX = ':absence:panel';
 
 function getStorageKey(guildId) {
@@ -28,7 +26,7 @@ function getStorageKey(guildId) {
 }
 
 function getPanelStorageKey(guildId) {
-    return `${PANEL_STORAGE_PREFIX}${guildId}${PANEL_STORAGE_SUFFIX}`;
+    return `${STORAGE_PREFIX}${guildId}${PANEL_STORAGE_SUFFIX}`;
 }
 
 function unwrap(data) {
@@ -45,61 +43,103 @@ function unwrap(data) {
 }
 
 /**
- * Creates a stable JSON representation.
- *
- * Discord builders can contain properties that are not relevant
- * to whether our configured panel actually changed, so we only
- * compare the generated component/embed payload.
+ * Recursively sorts object keys so that two otherwise-identical
+ * Discord payloads produce the same signature.
  */
-function stableStringify(value) {
-    if (value === null || value === undefined) {
-        return JSON.stringify(value);
-    }
-
+function sortObject(value) {
     if (Array.isArray(value)) {
-        return `[${value
-            .map(item => stableStringify(item))
-            .join(',')}]`;
+        return value.map(sortObject);
     }
 
-    if (typeof value === 'object') {
-        return `{${Object.keys(value)
+    if (value && typeof value === 'object') {
+        return Object.keys(value)
             .sort()
-            .map(
-                key =>
-                    `${JSON.stringify(key)}:${stableStringify(
-                        value[key],
-                    )}`,
-            )
-            .join(',')}}`;
+            .reduce((result, key) => {
+                result[key] = sortObject(value[key]);
+                return result;
+            }, {});
     }
 
-    return JSON.stringify(value);
+    return value;
 }
 
 /**
- * Generates the signature for the current configured panel.
- *
- * If ANYTHING that we configure changes, this signature changes.
+ * Creates a stable JSON representation of a Discord payload.
  */
-function getAbsencePanelSignature(panel) {
-    return stableStringify({
-        embeds: panel.embeds?.map(embed => {
-            if (typeof embed?.toJSON === 'function') {
-                return embed.toJSON();
-            }
+function stableStringify(value) {
+    return JSON.stringify(sortObject(value));
+}
 
-            return embed;
+/**
+ * Convert the desired panel into a stable signature.
+ *
+ * This deliberately includes the actual panel content:
+ * - embed title
+ * - description
+ * - color
+ * - fields
+ * - buttons
+ * - button labels
+ * - button styles
+ * - button emojis
+ * - custom IDs
+ *
+ * Therefore changing any of those will cause a new panel
+ * to be created.
+ */
+function getPanelSignature(panel) {
+    const normalized = {
+        embeds: (panel.embeds ?? []).map(embed => {
+            const json =
+                typeof embed?.toJSON === 'function'
+                    ? embed.toJSON()
+                    : embed;
+
+            return json;
         }),
 
-        components: panel.components?.map(component => {
-            if (typeof component?.toJSON === 'function') {
-                return component.toJSON();
-            }
+        components: (panel.components ?? []).map(component => {
+            const json =
+                typeof component?.toJSON === 'function'
+                    ? component.toJSON()
+                    : component;
 
-            return component;
+            return json;
         }),
-    });
+    };
+
+    return stableStringify(normalized);
+}
+
+/**
+ * Gets a stable signature from an existing Discord message.
+ */
+function getExistingMessageSignature(message) {
+    if (!message) {
+        return null;
+    }
+
+    const normalized = {
+        embeds: (message.embeds ?? []).map(embed => {
+            const json =
+                typeof embed?.toJSON === 'function'
+                    ? embed.toJSON()
+                    : embed;
+
+            return json;
+        }),
+
+        components: (message.components ?? []).map(component => {
+            const json =
+                typeof component?.toJSON === 'function'
+                    ? component.toJSON()
+                    : component;
+
+            return json;
+        }),
+    };
+
+    return stableStringify(normalized);
 }
 
 export function getStatusDisplay(status) {
@@ -176,7 +216,9 @@ export function createAdminAbsenceMessage(request) {
         components.push(
             new ActionRowBuilder().addComponents(
                 new ButtonBuilder()
-                    .setCustomId(`absence_approve:${request.id}`)
+                    .setCustomId(
+                        `absence_approve:${request.id}`,
+                    )
                     .setEmoji({
                         name: 'Yes',
                         id: '1545795445043888239',
@@ -185,7 +227,9 @@ export function createAdminAbsenceMessage(request) {
                     .setStyle(ButtonStyle.Success),
 
                 new ButtonBuilder()
-                    .setCustomId(`absence_deny:${request.id}`)
+                    .setCustomId(
+                        `absence_deny:${request.id}`,
+                    )
                     .setEmoji({
                         name: 'No',
                         id: '1545795160586190858',
@@ -207,7 +251,10 @@ export function createAdminAbsenceMessage(request) {
     };
 }
 
-export async function getAbsenceRequests(client, guildId) {
+export async function getAbsenceRequests(
+    client,
+    guildId,
+) {
     if (
         !client?.db ||
         typeof client.db.get !== 'function'
@@ -255,82 +302,6 @@ export async function saveAbsenceRequests(
     }
 }
 
-/**
- * Gets the saved panel state.
- *
- * Stored separately from absence requests so panel reconciliation
- * never modifies the actual absence request data.
- */
-async function getSavedPanelState(client, guildId) {
-    if (
-        !client?.db ||
-        typeof client.db.get !== 'function'
-    ) {
-        return null;
-    }
-
-    try {
-        const raw = await client.db.get(
-            getPanelStorageKey(guildId),
-            null,
-        );
-
-        const data = unwrap(raw);
-
-        if (
-            !data ||
-            typeof data !== 'object'
-        ) {
-            return null;
-        }
-
-        return {
-            messageId:
-                typeof data.messageId === 'string'
-                    ? data.messageId
-                    : null,
-
-            signature:
-                typeof data.signature === 'string'
-                    ? data.signature
-                    : null,
-        };
-    } catch {
-        return null;
-    }
-}
-
-/**
- * Saves the canonical absence panel state.
- */
-async function savePanelState(
-    client,
-    guildId,
-    state,
-) {
-    if (
-        !client?.db ||
-        typeof client.db.set !== 'function'
-    ) {
-        return false;
-    }
-
-    try {
-        await client.db.set(
-            getPanelStorageKey(guildId),
-            {
-                messageId: state.messageId,
-                signature: state.signature,
-                updatedAt: new Date().toISOString(),
-            },
-        );
-
-        return true;
-    } catch {
-        return false;
-    }
-}
-
 export async function createAbsenceRequest(
     client,
     guildId,
@@ -339,10 +310,11 @@ export async function createAbsenceRequest(
     startDate,
     endDate,
 ) {
-    const requests = await getAbsenceRequests(
-        client,
-        guildId,
-    );
+    const requests =
+        await getAbsenceRequests(
+            client,
+            guildId,
+        );
 
     const request = {
         id: `${Date.now()}-${Math.random()
@@ -377,11 +349,12 @@ export async function createAbsenceRequest(
 
     requests.push(request);
 
-    const saved = await saveAbsenceRequests(
-        client,
-        guildId,
-        requests,
-    );
+    const saved =
+        await saveAbsenceRequests(
+            client,
+            guildId,
+            requests,
+        );
 
     if (!saved) {
         throw new Error(
@@ -389,9 +362,12 @@ export async function createAbsenceRequest(
         );
     }
 
-    const adminChannel = await client.channels
-        .fetch(ABSENCE_ADMIN_CHANNEL_ID)
-        .catch(() => null);
+    const adminChannel =
+        await client.channels
+            .fetch(
+                ABSENCE_ADMIN_CHANNEL_ID,
+            )
+            .catch(() => null);
 
     if (
         !adminChannel ||
@@ -404,7 +380,9 @@ export async function createAbsenceRequest(
 
     const adminMessage =
         await adminChannel.send(
-            createAdminAbsenceMessage(request),
+            createAdminAbsenceMessage(
+                request,
+            ),
         );
 
     request.adminMessageId =
@@ -487,7 +465,9 @@ export async function updateAdminAbsenceMessage(
 
     const channel =
         await client.channels
-            .fetch(request.adminChannelId)
+            .fetch(
+                request.adminChannelId,
+            )
             .catch(() => null);
 
     if (
@@ -499,7 +479,9 @@ export async function updateAdminAbsenceMessage(
 
     const message =
         await channel.messages
-            .fetch(request.adminMessageId)
+            .fetch(
+                request.adminMessageId,
+            )
             .catch(() => null);
 
     if (!message) {
@@ -507,40 +489,112 @@ export async function updateAdminAbsenceMessage(
     }
 
     await message.edit(
-        createAdminAbsenceMessage(request),
+        createAdminAbsenceMessage(
+            request,
+        ),
     );
 
     return true;
 }
 
 /**
- * Reconciles the public absence panel.
+ * Gets the previously saved panel state.
+ *
+ * Stored separately from absence requests so that
+ * restarting the bot does not make the panel look
+ * like it has changed.
+ */
+async function getSavedPanelState(
+    client,
+    guildId,
+) {
+    if (
+        !client?.db ||
+        typeof client.db.get !== 'function'
+    ) {
+        return null;
+    }
+
+    try {
+        const raw =
+            await client.db.get(
+                getPanelStorageKey(
+                    guildId,
+                ),
+                null,
+            );
+
+        const state = unwrap(raw);
+
+        if (
+            !state ||
+            typeof state !== 'object'
+        ) {
+            return null;
+        }
+
+        return state;
+    } catch {
+        return null;
+    }
+}
+
+/**
+ * Saves the panel's message ID and content
+ * signature to persistent storage.
+ */
+async function savePanelState(
+    client,
+    guildId,
+    state,
+) {
+    if (
+        !client?.db ||
+        typeof client.db.set !== 'function'
+    ) {
+        return false;
+    }
+
+    try {
+        await client.db.set(
+            getPanelStorageKey(
+                guildId,
+            ),
+            state,
+        );
+
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+/**
+ * Reconciles the public Fruity Absence panel.
  *
  * IMPORTANT:
  *
- * This function does NOT edit the panel on every restart.
+ * This function NEVER edits an existing panel just
+ * because the bot restarted.
  *
- * Behaviour:
+ * The behavior is:
  *
  * 1. No saved panel:
- *    - Look for an existing matching panel.
- *    - If the existing panel already matches, save its state.
- *    - If it differs, send a new panel.
+ *    - Find an existing matching panel and adopt it.
+ *    - Otherwise create one.
  *
- * 2. Saved panel exists and content has NOT changed:
- *    - Do nothing.
+ * 2. Saved panel exists:
+ *    - Fetch the saved message.
+ *    - If the message still has the exact same content,
+ *      do absolutely nothing.
  *
- * 3. Saved panel exists and content HAS changed:
- *    - Send a NEW panel.
- *    - Do NOT edit the old panel.
- *    - Save the new panel as the canonical panel.
+ * 3. Configuration changed:
+ *    - Create ONE new panel.
+ *    - Save its message ID and signature.
+ *    - Do not edit the old panel.
  *
- * 4. Saved panel was deleted:
- *    - Send a new panel.
- *
- * 5. Restart without configuration changes:
- *    - No edit.
- *    - No new message.
+ * 4. Saved message was deleted:
+ *    - Create a replacement panel.
  */
 export async function reconcileAbsencePanel(
     client,
@@ -572,36 +626,27 @@ export async function reconcileAbsencePanel(
             return {
                 action: 'error',
                 error:
-                    `Absence panel channel ${ABSENCE_PANEL_CHANNEL_ID} ` +
-                    'could not be found or is not text based.',
+                    `Absence panel channel ${ABSENCE_PANEL_CHANNEL_ID} could not be found or is not text based.`,
             };
         }
 
+        const panel =
+            createAbsencePanel();
+
+        const desiredSignature =
+            getPanelSignature(panel);
+
         const guildId =
-            channel.guildId;
+            channel.guild?.id;
 
         if (!guildId) {
             return {
                 action: 'error',
                 error:
-                    'Could not determine the guild for the absence panel channel.',
+                    'Could not determine the guild ID for the absence panel channel.',
             };
         }
 
-        /*
-         * Build the desired panel ONCE.
-         */
-        const panel =
-            createAbsencePanel();
-
-        const desiredSignature =
-            getAbsencePanelSignature(
-                panel,
-            );
-
-        /*
-         * Load our saved canonical panel state.
-         */
         const savedState =
             await getSavedPanelState(
                 client,
@@ -611,11 +656,13 @@ export async function reconcileAbsencePanel(
         /*
          * ---------------------------------------------------------
          * CASE 1:
-         * We have a saved panel ID.
+         * We already know which panel belongs to this configuration.
          * ---------------------------------------------------------
          */
-        if (savedState?.messageId) {
-            const existing =
+        if (
+            savedState?.messageId
+        ) {
+            const savedMessage =
                 await channel.messages
                     .fetch(
                         savedState.messageId,
@@ -623,11 +670,41 @@ export async function reconcileAbsencePanel(
                     .catch(() => null);
 
             /*
-             * The saved message was deleted.
-             *
-             * We need to create a replacement.
+             * The message still exists.
              */
-            if (!existing) {
+            if (savedMessage) {
+                const actualSignature =
+                    getExistingMessageSignature(
+                        savedMessage,
+                    );
+
+                /*
+                 * The panel has NOT changed.
+                 *
+                 * Do absolutely nothing.
+                 *
+                 * This is the important restart protection.
+                 */
+                if (
+                    actualSignature ===
+                        desiredSignature &&
+                    savedState.signature ===
+                        desiredSignature
+                ) {
+                    return {
+                        action: 'unchanged',
+                        messageId:
+                            savedMessage.id,
+                    };
+                }
+
+                /*
+                 * Something changed.
+                 *
+                 * DO NOT EDIT THE OLD PANEL.
+                 *
+                 * Send a completely new panel instead.
+                 */
                 const newMessage =
                     await channel.send(
                         panel,
@@ -641,59 +718,24 @@ export async function reconcileAbsencePanel(
                             newMessage.id,
                         signature:
                             desiredSignature,
+                        updatedAt:
+                            new Date().toISOString(),
                     },
                 );
 
                 return {
                     action: 'created',
-                    reason: 'saved_panel_missing',
+                    reason: 'changed',
                     messageId:
                         newMessage.id,
                 };
             }
 
             /*
-             * The saved panel exists.
-             *
-             * IMPORTANT:
-             *
-             * Compare the actual current panel against
-             * the desired panel as well as the saved signature.
-             *
-             * This protects against somebody manually editing
-             * the panel in Discord.
+             * The previously saved panel was deleted.
+             * Create a replacement.
              */
-            const currentSignature =
-                getMessagePanelSignature(
-                    existing,
-                );
-
-            if (
-                savedState.signature ===
-                    desiredSignature &&
-                currentSignature ===
-                    desiredSignature
-            ) {
-                /*
-                 * NOTHING CHANGED.
-                 *
-                 * Do not edit.
-                 * Do not send.
-                 */
-                return {
-                    action: 'unchanged',
-                    messageId:
-                        existing.id,
-                };
-            }
-
-            /*
-             * Something actually changed.
-             *
-             * Send a NEW panel instead of editing the
-             * previous one.
-             */
-            const newMessage =
+            const replacement =
                 await channel.send(
                     panel,
                 );
@@ -703,33 +745,29 @@ export async function reconcileAbsencePanel(
                 guildId,
                 {
                     messageId:
-                        newMessage.id,
+                        replacement.id,
                     signature:
                         desiredSignature,
+                    updatedAt:
+                        new Date().toISOString(),
                 },
             );
 
             return {
                 action: 'created',
-                reason: 'panel_changed',
-                oldMessageId:
-                    existing.id,
+                reason: 'missing',
                 messageId:
-                    newMessage.id,
+                    replacement.id,
             };
         }
 
         /*
          * ---------------------------------------------------------
          * CASE 2:
-         * No saved panel state exists.
+         * There is no saved state yet.
          *
-         * This can happen if:
-         * - This is the first startup.
-         * - The database was reset.
-         * - The bot was updated before panel state was stored.
-         *
-         * We check existing messages before creating anything.
+         * This is useful when upgrading from the old version of
+         * absenceService.js which did not persist the panel ID.
          * ---------------------------------------------------------
          */
 
@@ -738,8 +776,8 @@ export async function reconcileAbsencePanel(
                 limit: 50,
             });
 
-        const existingPanels =
-            messages.filter(
+        const existing =
+            messages.find(
                 message => {
                     if (
                         message.author?.id !==
@@ -757,54 +795,49 @@ export async function reconcileAbsencePanel(
                 },
             );
 
-        /*
-         * Check whether one of the existing panels already
-         * matches our desired configuration.
-         */
-        const matchingPanel =
-            existingPanels.find(
-                message =>
-                    getMessagePanelSignature(
-                        message,
-                    ) ===
-                    desiredSignature,
-            );
+        if (existing) {
+            const existingSignature =
+                getExistingMessageSignature(
+                    existing,
+                );
 
-        if (matchingPanel) {
             /*
-             * Existing panel is already correct.
+             * If the existing panel already matches
+             * our current configuration, adopt it.
              *
-             * Save its state so future restarts can
-             * immediately determine that nothing changed.
+             * We do NOT edit it.
              */
-            await savePanelState(
-                client,
-                guildId,
-                {
+            if (
+                existingSignature ===
+                desiredSignature
+            ) {
+                await savePanelState(
+                    client,
+                    guildId,
+                    {
+                        messageId:
+                            existing.id,
+                        signature:
+                            desiredSignature,
+                        updatedAt:
+                            new Date().toISOString(),
+                    },
+                );
+
+                return {
+                    action: 'unchanged',
                     messageId:
-                        matchingPanel.id,
-                    signature:
-                        desiredSignature,
-                },
-            );
+                        existing.id,
+                };
+            }
 
-            return {
-                action: 'unchanged',
-                reason:
-                    'existing_panel_matches',
-                messageId:
-                    matchingPanel.id,
-            };
-        }
-
-        /*
-         * We found a bot-created Fruity Absence panel,
-         * but its contents are different.
-         *
-         * Create a NEW panel.
-         */
-        if (existingPanels.size > 0) {
-            const newMessage =
+            /*
+             * An old panel exists but its content
+             * is different from the current config.
+             *
+             * Send the new version.
+             */
+            const changedMessage =
                 await channel.send(
                     panel,
                 );
@@ -814,28 +847,32 @@ export async function reconcileAbsencePanel(
                 guildId,
                 {
                     messageId:
-                        newMessage.id,
+                        changedMessage.id,
                     signature:
                         desiredSignature,
+                    updatedAt:
+                        new Date().toISOString(),
                 },
             );
 
             return {
                 action: 'created',
-                reason:
-                    'existing_panel_changed',
+                reason: 'changed',
                 messageId:
-                    newMessage.id,
+                    changedMessage.id,
             };
         }
 
         /*
-         * No previous panel exists at all.
-         *
-         * First creation.
+         * ---------------------------------------------------------
+         * CASE 3:
+         * No existing panel at all.
+         * ---------------------------------------------------------
          */
         const message =
-            await channel.send(panel);
+            await channel.send(
+                panel,
+            );
 
         await savePanelState(
             client,
@@ -845,12 +882,14 @@ export async function reconcileAbsencePanel(
                     message.id,
                 signature:
                     desiredSignature,
+                updatedAt:
+                    new Date().toISOString(),
             },
         );
 
         return {
             action: 'created',
-            reason: 'first_panel',
+            reason: 'initial',
             messageId:
                 message.id,
         };
@@ -862,47 +901,6 @@ export async function reconcileAbsencePanel(
                 String(error),
         };
     }
-}
-
-/**
- * Converts an existing Discord message into the same
- * signature format used by createAbsencePanel().
- *
- * This lets us detect manual changes to the actual Discord
- * message even if our database still contains the old signature.
- */
-function getMessagePanelSignature(
-    message,
-) {
-    return stableStringify({
-        embeds:
-            message.embeds?.map(
-                embed => {
-                    if (
-                        typeof embed?.toJSON ===
-                        'function'
-                    ) {
-                        return embed.toJSON();
-                    }
-
-                    return embed;
-                },
-            ) ?? [],
-
-        components:
-            message.components?.map(
-                component => {
-                    if (
-                        typeof component?.toJSON ===
-                        'function'
-                    ) {
-                        return component.toJSON();
-                    }
-
-                    return component;
-                },
-            ) ?? [],
-    });
 }
 
 export {
