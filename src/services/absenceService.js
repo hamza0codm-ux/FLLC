@@ -61,7 +61,7 @@ const ABSENCE_PANEL_CONFIG = {
     title: `${EMOJIS.vacation} Fruity Absence`,
 
     description:
-        'Submit an absence request or check your current request status below.',
+        'Submit an absence request below.',
 
     color: ABSENCE_COLOR,
 
