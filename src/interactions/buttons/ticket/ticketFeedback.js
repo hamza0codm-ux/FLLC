@@ -90,14 +90,11 @@ function buildFeedbackEmbed(ticketData) {
         });
 }
 
-/**
- * Builds the feedback buttons.
- *
- * IMPORTANT:
- * Once a rating exists, every rating button is disabled.
- * The user can still add/edit their comment.
- */
-function buildFeedbackComponents(ticketData, guildId, channelId) {
+function buildFeedbackComponents(
+    ticketData,
+    guildId,
+    channelId,
+) {
     const feedback = getFeedback(ticketData);
 
     const hasRating = Boolean(feedback.rating);
@@ -164,14 +161,15 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
             )
             .setLabel(
                 hasComment
-                    ? '✍️ Edit Comment'
+                    ? '✍️ Comment Submitted'
                     : '✍️ Add Comment',
             )
             .setStyle(
                 hasComment
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
-            ),
+            )
+            .setDisabled(hasComment),
 
         new ButtonBuilder()
             .setCustomId(
@@ -187,11 +185,6 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
     ];
 }
 
-/**
- * Logs the review only when both rating and comment exist.
- *
- * Returns true if the review was completed and logged.
- */
 async function finishFeedbackIfComplete({
     interaction,
     guildId,
@@ -204,11 +197,6 @@ async function finishFeedbackIfComplete({
         return false;
     }
 
-    /*
-     * Already logged.
-     *
-     * Do not create another review entry.
-     */
     if (feedback.loggedAt) {
         return true;
     }
@@ -391,9 +379,6 @@ const feedbackHandler = {
             return;
         }
 
-        /*
-         * Only the ticket creator can submit feedback.
-         */
         if (
             interaction.user.id !==
             ticketData.userId
@@ -420,11 +405,9 @@ const feedbackHandler = {
             getFeedback(ticketData);
 
         /*
-         * SERVER-SIDE PROTECTION
+         * HARD PROTECTION:
          *
-         * Even if somebody somehow clicks an old,
-         * already-rendered rating button, do not allow
-         * the rating to be changed.
+         * A rating can only ever be submitted once.
          */
         if (existingFeedback.rating) {
             await InteractionHelper.safeEditReply(
@@ -444,26 +427,14 @@ const feedbackHandler = {
                 },
             );
 
-            logger.info(
-                'Ticket feedback rating blocked because rating already exists',
-                {
-                    guildId,
-                    channelId,
-                    userId: interaction.user.id,
-                    existingRating:
-                        existingFeedback.rating,
-                    attemptedRating: rating,
-                },
-            );
-
             return;
         }
 
         /*
-         * FIRST RATING
+         * Save the rating.
          *
-         * Save the rating but preserve any comment
-         * that may already exist.
+         * Preserve an existing comment if the user
+         * submitted the comment first.
          */
         ticketData.feedback = {
             ...ticketData.feedback,
@@ -477,10 +448,6 @@ const feedbackHandler = {
                 existingFeedback.submittedAt ??
                 new Date().toISOString(),
 
-            /*
-             * This is important.
-             * We do not log until both fields exist.
-             */
             loggedAt:
                 existingFeedback.loggedAt ??
                 null,
@@ -510,11 +477,15 @@ const feedbackHandler = {
                 {
                     embeds: [
                         new EmbedBuilder()
-                            .setTitle('⚠️ Could Not Save Rating')
+                            .setTitle(
+                                '⚠️ Could Not Save Rating',
+                            )
                             .setDescription(
                                 'Something went wrong while saving your rating. Please try again.',
                             )
-                            .setColor(getColor('error')),
+                            .setColor(
+                                getColor('error'),
+                            ),
                     ],
                     components: [],
                 },
@@ -523,10 +494,6 @@ const feedbackHandler = {
             return;
         }
 
-        /*
-         * If the user already supplied a comment,
-         * this rating completes the feedback.
-         */
         const completed =
             await finishFeedbackIfComplete({
                 interaction,
@@ -565,13 +532,6 @@ const feedbackHandler = {
             return;
         }
 
-        /*
-         * Rating was saved but comment is still missing.
-         *
-         * IMPORTANT:
-         * The rating buttons are now disabled.
-         * Add Comment remains active.
-         */
         await InteractionHelper.safeEditReply(
             interaction,
             {
@@ -699,11 +659,34 @@ const commentHandler = {
             return;
         }
 
-        const existingComment =
-            typeof ticketData.feedback?.comment ===
-                'string'
-                ? ticketData.feedback.comment
-                : '';
+        const feedback =
+            getFeedback(ticketData);
+
+        /*
+         * HARD PROTECTION:
+         *
+         * If a comment already exists, it cannot be
+         * edited or submitted again.
+         */
+        if (feedback.comment) {
+            await interaction.reply({
+                embeds: [
+                    new EmbedBuilder()
+                        .setTitle(
+                            '✍️ Comment Already Submitted',
+                        )
+                        .setDescription(
+                            'You have already submitted your comment for this ticket. Comments cannot be changed.',
+                        )
+                        .setColor(
+                            getColor('warning'),
+                        ),
+                ],
+                ephemeral: true,
+            });
+
+            return;
+        }
 
         const modal =
             new ModalBuilder()
@@ -711,9 +694,7 @@ const commentHandler = {
                     `ticket_feedback_comment_modal:${guildId}:${channelId}`,
                 )
                 .setTitle(
-                    existingComment
-                        ? 'Edit Ticket Feedback'
-                        : 'Add Ticket Feedback',
+                    'Add Ticket Feedback',
                 );
 
         const commentInput =
@@ -732,15 +713,6 @@ const commentHandler = {
                 )
                 .setRequired(true)
                 .setMaxLength(1000);
-
-        if (existingComment) {
-            commentInput.setValue(
-                existingComment.slice(
-                    0,
-                    1000,
-                ),
-            );
-        }
 
         modal.addComponents(
             new ActionRowBuilder().addComponents(
@@ -866,3 +838,4 @@ export default [
     commentHandler,
     declineHandler,
 ];
+
