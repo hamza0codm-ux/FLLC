@@ -27,29 +27,40 @@ const STAR_LABELS = {
 };
 
 function getFeedback(ticketData) {
-    return {
-        rating: Number.isInteger(ticketData?.feedback?.rating)
-            ? ticketData.feedback.rating
-            : null,
+    const feedback = ticketData?.feedback ?? {};
 
-        comment:
-            typeof ticketData?.feedback?.comment === 'string' &&
-            ticketData.feedback.comment.trim().length > 0
-                ? ticketData.feedback.comment.trim()
+    const rating = Number(feedback.rating);
+
+    return {
+        rating:
+            Number.isInteger(rating) &&
+            rating >= 1 &&
+            rating <= 5
+                ? rating
                 : null,
 
-        submittedAt: ticketData?.feedback?.submittedAt ?? null,
+        comment:
+            typeof feedback.comment === 'string' &&
+            feedback.comment.trim().length > 0
+                ? feedback.comment.trim()
+                : null,
 
-        loggedAt: ticketData?.feedback?.loggedAt ?? null,
+        submittedAt:
+            feedback.submittedAt ?? null,
 
-        declined: ticketData?.feedback?.declined === true,
+        loggedAt:
+            feedback.loggedAt ?? null,
+
+        declined:
+            feedback.declined === true,
     };
 }
 
 function buildFeedbackEmbed(ticketData) {
     const feedback = getFeedback(ticketData);
 
-    let description = 'You can rate your support experience and leave a comment.\n\n';
+    let description =
+        'You can rate your support experience and leave a comment.\n\n';
 
     description += feedback.rating
         ? `⭐ **Rating:** ${STAR_LABELS[String(feedback.rating)]}\n`
@@ -60,11 +71,14 @@ function buildFeedbackEmbed(ticketData) {
         : '✍️ **Comment:** Not submitted yet\n';
 
     if (feedback.rating && feedback.comment) {
-        description += '\n✅ **Thank you!** Your rating and comment have both been recorded.';
+        description +=
+            '\n✅ **Thank you!** Your rating and comment have both been recorded.';
     } else if (feedback.rating) {
-        description += '\nYou can still add a comment below.';
+        description +=
+            '\n✍️ You can still add a comment below.';
     } else if (feedback.comment) {
-        description += '\nYou can still leave a rating below.';
+        description +=
+            '\n⭐ You can still leave a rating below.';
     }
 
     return new EmbedBuilder()
@@ -76,8 +90,18 @@ function buildFeedbackEmbed(ticketData) {
         });
 }
 
+/**
+ * Builds the feedback buttons.
+ *
+ * IMPORTANT:
+ * Once a rating exists, every rating button is disabled.
+ * The user can still add/edit their comment.
+ */
 function buildFeedbackComponents(ticketData, guildId, channelId) {
     const feedback = getFeedback(ticketData);
+
+    const hasRating = Boolean(feedback.rating);
+    const hasComment = Boolean(feedback.comment);
 
     const base = `ticket_feedback:${guildId}:${channelId}`;
 
@@ -89,7 +113,8 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
                 feedback.rating === 1
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
-            ),
+            )
+            .setDisabled(hasRating),
 
         new ButtonBuilder()
             .setCustomId(`${base}:2`)
@@ -98,7 +123,8 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
                 feedback.rating === 2
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
-            ),
+            )
+            .setDisabled(hasRating),
 
         new ButtonBuilder()
             .setCustomId(`${base}:3`)
@@ -107,7 +133,8 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
                 feedback.rating === 3
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
-            ),
+            )
+            .setDisabled(hasRating),
 
         new ButtonBuilder()
             .setCustomId(`${base}:4`)
@@ -116,7 +143,8 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
                 feedback.rating === 4
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
-            ),
+            )
+            .setDisabled(hasRating),
 
         new ButtonBuilder()
             .setCustomId(`${base}:5`)
@@ -125,7 +153,8 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
                 feedback.rating === 5
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
-            ),
+            )
+            .setDisabled(hasRating),
     );
 
     const actionRow = new ActionRowBuilder().addComponents(
@@ -134,12 +163,12 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
                 `ticket_feedback_comment:${guildId}:${channelId}`,
             )
             .setLabel(
-                feedback.comment
+                hasComment
                     ? '✍️ Edit Comment'
                     : '✍️ Add Comment',
             )
             .setStyle(
-                feedback.comment
+                hasComment
                     ? ButtonStyle.Primary
                     : ButtonStyle.Secondary,
             ),
@@ -152,9 +181,17 @@ function buildFeedbackComponents(ticketData, guildId, channelId) {
             .setStyle(ButtonStyle.Secondary),
     );
 
-    return [starsRow, actionRow];
+    return [
+        starsRow,
+        actionRow,
+    ];
 }
 
+/**
+ * Logs the review only when both rating and comment exist.
+ *
+ * Returns true if the review was completed and logged.
+ */
 async function finishFeedbackIfComplete({
     interaction,
     guildId,
@@ -163,29 +200,51 @@ async function finishFeedbackIfComplete({
 }) {
     const feedback = getFeedback(ticketData);
 
-    if (!feedback.rating || !feedback.comment || feedback.loggedAt) {
+    if (!feedback.rating || !feedback.comment) {
         return false;
     }
 
-    const submittedAt = feedback.submittedAt ?? new Date().toISOString();
+    /*
+     * Already logged.
+     *
+     * Do not create another review entry.
+     */
+    if (feedback.loggedAt) {
+        return true;
+    }
+
+    const loggedAt = new Date().toISOString();
 
     ticketData.feedback = {
         ...ticketData.feedback,
+
         rating: feedback.rating,
         comment: feedback.comment,
-        submittedAt,
-        loggedAt: new Date().toISOString(),
+
+        submittedAt:
+            feedback.submittedAt ??
+            loggedAt,
+
+        loggedAt,
+
         declined: false,
     };
 
     try {
-        await saveTicketData(guildId, channelId, ticketData);
-    } catch (err) {
-        logger.error('ticketFeedback: failed to save completed feedback', {
+        await saveTicketData(
             guildId,
             channelId,
-            error: err.message,
-        });
+            ticketData,
+        );
+    } catch (err) {
+        logger.error(
+            'ticketFeedback: failed to save completed feedback',
+            {
+                guildId,
+                channelId,
+                error: err.message,
+            },
+        );
 
         return false;
     }
@@ -201,12 +260,26 @@ async function finishFeedbackIfComplete({
             comment: feedback.comment,
         });
     } catch (err) {
-        logger.warn('ticketFeedback: failed to send completed feedback log', {
+        logger.warn(
+            'ticketFeedback: failed to send completed feedback log',
+            {
+                guildId,
+                channelId,
+                error: err.message,
+            },
+        );
+    }
+
+    logger.info(
+        'Ticket feedback fully submitted',
+        {
             guildId,
             channelId,
-            error: err.message,
-        });
-    }
+            userId: interaction.user.id,
+            rating: feedback.rating,
+            comment: feedback.comment,
+        },
+    );
 
     return true;
 }
@@ -215,9 +288,17 @@ const feedbackHandler = {
     name: 'ticket_feedback',
 
     async execute(interaction, client, args) {
-        const [guildId, channelId, ratingStr] = args;
+        const [
+            guildId,
+            channelId,
+            ratingStr,
+        ] = args;
 
-        if (!guildId || !channelId || !ratingStr) {
+        if (
+            !guildId ||
+            !channelId ||
+            !ratingStr
+        ) {
             await InteractionHelper.safeReply(interaction, {
                 embeds: [
                     new EmbedBuilder()
@@ -233,9 +314,16 @@ const feedbackHandler = {
             return;
         }
 
-        const rating = Number.parseInt(ratingStr, 10);
+        const rating = Number.parseInt(
+            ratingStr,
+            10,
+        );
 
-        if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        if (
+            !Number.isInteger(rating) ||
+            rating < 1 ||
+            rating > 5
+        ) {
             await InteractionHelper.safeReply(interaction, {
                 embeds: [
                     new EmbedBuilder()
@@ -269,161 +357,279 @@ const feedbackHandler = {
         let ticketData;
 
         try {
-            ticketData = await getTicketData(guildId, channelId);
-        } catch (err) {
-            logger.warn('ticketFeedback: failed to load ticket data', {
+            ticketData = await getTicketData(
                 guildId,
                 channelId,
-                error: err.message,
-            });
+            );
+        } catch (err) {
+            logger.warn(
+                'ticketFeedback: failed to load ticket data',
+                {
+                    guildId,
+                    channelId,
+                    error: err.message,
+                },
+            );
         }
 
         if (!ticketData) {
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('⚠️ Ticket Not Found')
-                        .setDescription(
-                            'Could not find the ticket associated with this survey.',
-                        )
-                        .setColor(getColor('error')),
-                ],
-                components: [],
-            });
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle('⚠️ Ticket Not Found')
+                            .setDescription(
+                                'Could not find the ticket associated with this survey.',
+                            )
+                            .setColor(getColor('error')),
+                    ],
+                    components: [],
+                },
+            );
 
             return;
         }
-
-        if (interaction.user.id !== ticketData.userId) {
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('❌ Not Allowed')
-                        .setDescription(
-                            'Only the ticket creator can submit feedback for this ticket.',
-                        )
-                        .setColor(getColor('error')),
-                ],
-                components: [],
-            });
-
-            return;
-        }
-
-        const existingFeedback = getFeedback(ticketData);
 
         /*
-         * Do NOT finalize here.
+         * Only the ticket creator can submit feedback.
+         */
+        if (
+            interaction.user.id !==
+            ticketData.userId
+        ) {
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle('❌ Not Allowed')
+                            .setDescription(
+                                'Only the ticket creator can submit feedback for this ticket.',
+                            )
+                            .setColor(getColor('error')),
+                    ],
+                    components: [],
+                },
+            );
+
+            return;
+        }
+
+        const existingFeedback =
+            getFeedback(ticketData);
+
+        /*
+         * SERVER-SIDE PROTECTION
          *
-         * A rating is independent from the comment.
-         * The user must still be able to add a comment afterwards.
+         * Even if somebody somehow clicks an old,
+         * already-rendered rating button, do not allow
+         * the rating to be changed.
+         */
+        if (existingFeedback.rating) {
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [
+                        buildFeedbackEmbed(
+                            ticketData,
+                        ),
+                    ],
+                    components:
+                        buildFeedbackComponents(
+                            ticketData,
+                            guildId,
+                            channelId,
+                        ),
+                },
+            );
+
+            logger.info(
+                'Ticket feedback rating blocked because rating already exists',
+                {
+                    guildId,
+                    channelId,
+                    userId: interaction.user.id,
+                    existingRating:
+                        existingFeedback.rating,
+                    attemptedRating: rating,
+                },
+            );
+
+            return;
+        }
+
+        /*
+         * FIRST RATING
+         *
+         * Save the rating but preserve any comment
+         * that may already exist.
          */
         ticketData.feedback = {
             ...ticketData.feedback,
 
             rating,
 
-            // Preserve an existing comment.
-            comment: existingFeedback.comment,
+            comment:
+                existingFeedback.comment,
 
-            // Preserve the original submission timestamp.
             submittedAt:
                 existingFeedback.submittedAt ??
                 new Date().toISOString(),
 
-            // Rating changed, so this must not be considered
-            // previously logged unless the exact review is finalized again.
-            loggedAt: null,
+            /*
+             * This is important.
+             * We do not log until both fields exist.
+             */
+            loggedAt:
+                existingFeedback.loggedAt ??
+                null,
 
             declined: false,
         };
 
         try {
-            await saveTicketData(guildId, channelId, ticketData);
-        } catch (err) {
-            logger.error('ticketFeedback: failed to save rating', {
+            await saveTicketData(
                 guildId,
                 channelId,
-                rating,
-                error: err.message,
-            });
+                ticketData,
+            );
+        } catch (err) {
+            logger.error(
+                'ticketFeedback: failed to save rating',
+                {
+                    guildId,
+                    channelId,
+                    rating,
+                    error: err.message,
+                },
+            );
 
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('⚠️ Could Not Save Rating')
-                        .setDescription(
-                            'Something went wrong while saving your rating. Please try again.',
-                        )
-                        .setColor(getColor('error')),
-                ],
-                components: [],
-            });
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle('⚠️ Could Not Save Rating')
+                            .setDescription(
+                                'Something went wrong while saving your rating. Please try again.',
+                            )
+                            .setColor(getColor('error')),
+                    ],
+                    components: [],
+                },
+            );
 
             return;
         }
 
-        const completed = await finishFeedbackIfComplete({
-            interaction,
-            guildId,
-            channelId,
-            ticketData,
-        });
+        /*
+         * If the user already supplied a comment,
+         * this rating completes the feedback.
+         */
+        const completed =
+            await finishFeedbackIfComplete({
+                interaction,
+                guildId,
+                channelId,
+                ticketData,
+            });
 
         if (completed) {
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [
-                    new EmbedBuilder()
-                        .setTitle('✅ Thanks for your feedback!')
-                        .setDescription(
-                            `You rated your support experience **${STAR_LABELS[String(rating)]}** and your comment has also been recorded.\n\nThank you for helping us improve!`,
-                        )
-                        .setColor(getColor('success'))
-                        .setFooter({
-                            text: 'Thank you for using our support system.',
-                        })
-                        .setTimestamp(),
-                ],
-                components: [],
-            });
-        } else {
-            await InteractionHelper.safeEditReply(interaction, {
-                embeds: [buildFeedbackEmbed(ticketData)],
-                components: buildFeedbackComponents(
-                    ticketData,
-                    guildId,
-                    channelId,
-                ),
-            });
+            const feedback =
+                getFeedback(ticketData);
+
+            await InteractionHelper.safeEditReply(
+                interaction,
+                {
+                    embeds: [
+                        new EmbedBuilder()
+                            .setTitle(
+                                '✅ Thanks for your feedback!',
+                            )
+                            .setDescription(
+                                `Your feedback has been recorded successfully!\n\n**Rating:** ${STAR_LABELS[String(feedback.rating)]}\n**Comment:** ${feedback.comment}\n\nThank you for helping us improve!`,
+                            )
+                            .setColor(
+                                getColor('success'),
+                            )
+                            .setFooter({
+                                text: 'Thank you for using our support system.',
+                            })
+                            .setTimestamp(),
+                    ],
+                    components: [],
+                },
+            );
+
+            return;
         }
 
-        logger.info('Ticket feedback rating saved', {
-            guildId,
-            channelId,
-            userId: interaction.user.id,
-            rating,
-            hasComment: Boolean(
-                ticketData.feedback?.comment,
-            ),
-        });
+        /*
+         * Rating was saved but comment is still missing.
+         *
+         * IMPORTANT:
+         * The rating buttons are now disabled.
+         * Add Comment remains active.
+         */
+        await InteractionHelper.safeEditReply(
+            interaction,
+            {
+                embeds: [
+                    buildFeedbackEmbed(
+                        ticketData,
+                    ),
+                ],
+                components:
+                    buildFeedbackComponents(
+                        ticketData,
+                        guildId,
+                        channelId,
+                    ),
+            },
+        );
+
+        logger.info(
+            'Ticket feedback rating saved; waiting for comment',
+            {
+                guildId,
+                channelId,
+                userId: interaction.user.id,
+                rating,
+            },
+        );
     },
 };
 
 const commentHandler = {
     name: 'ticket_feedback_comment',
 
-    async execute(interaction, client, args) {
-        const [guildId, channelId] = args;
+    async execute(
+        interaction,
+        client,
+        args,
+    ) {
+        const [
+            guildId,
+            channelId,
+        ] = args;
 
-        if (!guildId || !channelId) {
+        if (
+            !guildId ||
+            !channelId
+        ) {
             await interaction.update({
                 embeds: [
                     new EmbedBuilder()
-                        .setTitle('⚠️ Invalid Feedback Link')
+                        .setTitle(
+                            '⚠️ Invalid Feedback Link',
+                        )
                         .setDescription(
                             'This feedback action appears to be malformed.',
                         )
-                        .setColor(getColor('error')),
+                        .setColor(
+                            getColor('error'),
+                        ),
                 ],
                 components: [],
             });
@@ -434,7 +640,11 @@ const commentHandler = {
         let ticketData;
 
         try {
-            ticketData = await getTicketData(guildId, channelId);
+            ticketData =
+                await getTicketData(
+                    guildId,
+                    channelId,
+                );
         } catch (err) {
             logger.warn(
                 'ticketFeedbackComment: failed to load ticket data',
@@ -450,11 +660,15 @@ const commentHandler = {
             await interaction.reply({
                 embeds: [
                     new EmbedBuilder()
-                        .setTitle('⚠️ Ticket Not Found')
+                        .setTitle(
+                            '⚠️ Ticket Not Found',
+                        )
                         .setDescription(
                             'Could not find the ticket associated with this survey.',
                         )
-                        .setColor(getColor('error')),
+                        .setColor(
+                            getColor('error'),
+                        ),
                 ],
                 ephemeral: true,
             });
@@ -462,15 +676,22 @@ const commentHandler = {
             return;
         }
 
-        if (interaction.user.id !== ticketData.userId) {
+        if (
+            interaction.user.id !==
+            ticketData.userId
+        ) {
             await interaction.reply({
                 embeds: [
                     new EmbedBuilder()
-                        .setTitle('❌ Not Allowed')
+                        .setTitle(
+                            '❌ Not Allowed',
+                        )
                         .setDescription(
                             'Only the ticket creator can submit feedback for this ticket.',
                         )
-                        .setColor(getColor('error')),
+                        .setColor(
+                            getColor('error'),
+                        ),
                 ],
                 ephemeral: true,
             });
@@ -479,54 +700,89 @@ const commentHandler = {
         }
 
         const existingComment =
-            typeof ticketData.feedback?.comment === 'string'
+            typeof ticketData.feedback?.comment ===
+                'string'
                 ? ticketData.feedback.comment
                 : '';
 
-        const modal = new ModalBuilder()
-            .setCustomId(
-                `ticket_feedback_comment_modal:${guildId}:${channelId}`,
-            )
-            .setTitle(
-                existingComment
-                    ? 'Edit Ticket Feedback'
-                    : 'Add Ticket Feedback',
-            );
+        const modal =
+            new ModalBuilder()
+                .setCustomId(
+                    `ticket_feedback_comment_modal:${guildId}:${channelId}`,
+                )
+                .setTitle(
+                    existingComment
+                        ? 'Edit Ticket Feedback'
+                        : 'Add Ticket Feedback',
+                );
 
-        const commentInput = new TextInputBuilder()
-            .setCustomId('feedback_comment')
-            .setLabel('Your feedback')
-            .setStyle(TextInputStyle.Paragraph)
-            .setPlaceholder(
-                'Share what went well or how we can improve...',
-            )
-            .setRequired(true)
-            .setMaxLength(1000)
-            .setValue(existingComment.slice(0, 1000));
+        const commentInput =
+            new TextInputBuilder()
+                .setCustomId(
+                    'feedback_comment',
+                )
+                .setLabel(
+                    'Your feedback',
+                )
+                .setStyle(
+                    TextInputStyle.Paragraph,
+                )
+                .setPlaceholder(
+                    'Share what went well or how we can improve...',
+                )
+                .setRequired(true)
+                .setMaxLength(1000);
+
+        if (existingComment) {
+            commentInput.setValue(
+                existingComment.slice(
+                    0,
+                    1000,
+                ),
+            );
+        }
 
         modal.addComponents(
-            new ActionRowBuilder().addComponents(commentInput),
+            new ActionRowBuilder().addComponents(
+                commentInput,
+            ),
         );
 
-        await interaction.showModal(modal);
+        await interaction.showModal(
+            modal,
+        );
     },
 };
 
 const declineHandler = {
     name: 'ticket_feedback_decline',
 
-    async execute(interaction, client, args) {
-        const [guildId, channelId] = args;
+    async execute(
+        interaction,
+        client,
+        args,
+    ) {
+        const [
+            guildId,
+            channelId,
+        ] = args;
 
-        if (!guildId || !channelId) {
+        if (
+            !guildId ||
+            !channelId
+        ) {
             await interaction.update({
                 embeds: [
                     new EmbedBuilder()
-                        .setTitle('⚠️ Invalid Feedback Link')
+                        .setTitle(
+                            '⚠️ Invalid Feedback Link',
+                        )
                         .setDescription(
                             'This feedback action appears to be malformed.',
                         )
-                        .setColor(getColor('error')),
+                        .setColor(
+                            getColor('error'),
+                        ),
                 ],
                 components: [],
             });
@@ -534,10 +790,14 @@ const declineHandler = {
             return;
         }
 
-        let ticketData;
+        let ticketData = null;
 
         try {
-            ticketData = await getTicketData(guildId, channelId);
+            ticketData =
+                await getTicketData(
+                    guildId,
+                    channelId,
+                );
         } catch (err) {
             logger.warn(
                 'ticketFeedbackDecline: failed to load ticket data',
@@ -549,12 +809,19 @@ const declineHandler = {
             );
         }
 
-        if (ticketData && interaction.user.id === ticketData.userId) {
+        if (
+            ticketData &&
+            interaction.user.id ===
+                ticketData.userId
+        ) {
             ticketData.feedback = {
                 ...ticketData.feedback,
+
                 declined: true,
+
                 submittedAt:
-                    ticketData.feedback?.submittedAt ??
+                    ticketData.feedback
+                        ?.submittedAt ??
                     new Date().toISOString(),
             };
 
@@ -579,11 +846,15 @@ const declineHandler = {
         await interaction.update({
             embeds: [
                 new EmbedBuilder()
-                    .setTitle('👋 No problem!')
+                    .setTitle(
+                        '👋 No problem!',
+                    )
                     .setDescription(
                         'Thanks for considering leaving feedback. You can always reach out again if you need further support.',
                     )
-                    .setColor(getColor('default')),
+                    .setColor(
+                        getColor('default'),
+                    ),
             ],
             components: [],
         });
