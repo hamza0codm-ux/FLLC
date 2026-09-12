@@ -1,8 +1,11 @@
+// src/buttons/tickets/index.js
+
 import createTicketHandler, {
   closeTicketHandler,
   claimTicketHandler,
   priorityTicketHandler,
   unclaimTicketHandler,
+  pingTicketUserHandler,
   reopenTicketHandler,
   deleteTicketHandler,
 } from '../../../handlers/ticketButtons.js';
@@ -109,10 +112,11 @@ export default [
   |--------------------------------------------------------------------------
   */
 
-  closeTicketHandler,
   claimTicketHandler,
-  priorityTicketHandler,
   unclaimTicketHandler,
+  pingTicketUserHandler,
+  priorityTicketHandler,
+  closeTicketHandler,
   reopenTicketHandler,
   deleteTicketHandler,
 ];
