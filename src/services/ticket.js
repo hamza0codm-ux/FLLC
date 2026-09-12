@@ -1428,7 +1428,7 @@ export async function pingTicketUser(
 
     await channel.send({
       content:
-        `${ticketUser}, **${pinger}** is requesting your attention in this ticket.`,
+        `${ticketUser} When you are available please respond to this ticket.`,
 
       allowedMentions: {
         users: [
