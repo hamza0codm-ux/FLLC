@@ -20,6 +20,7 @@ import {
   claimTicket,
   updateTicketPriority,
   getUserTicketCount,
+  pingTicketUser,
 } from '../services/ticket.js';
 
 import {
@@ -385,12 +386,6 @@ const createTicketHandler = {
       |--------------------------------------------------------------------------
       | Ticket Creation Modal
       |--------------------------------------------------------------------------
-      |
-      | Do not query the database here.
-      |
-      | The button interaction needs to open the modal immediately.
-      | Ticket-limit checking is performed when the modal is submitted.
-      |--------------------------------------------------------------------------
       */
 
       const modal =
@@ -431,12 +426,6 @@ const createTicketHandler = {
       |--------------------------------------------------------------------------
       | Register Modal Handler
       |--------------------------------------------------------------------------
-      |
-      | The button interaction and modal submission are separate Discord
-      | interactions.
-      |
-      | interactionCreate.js resolves modal handlers through client.modals.
-      |
       */
 
       if (client?.modals?.set) {
@@ -628,19 +617,6 @@ const createTicketModalHandler = {
       |--------------------------------------------------------------------------
       | CREATE TICKET
       |--------------------------------------------------------------------------
-      |
-      | services/ticket.js expects:
-      |
-      | createTicket(
-      |   guild,
-      |   member,
-      |   categoryId,
-      |   reason,
-      |   priority,
-      |   options
-      | )
-      |
-      |--------------------------------------------------------------------------
       */
 
       const {
@@ -788,12 +764,6 @@ const closeTicketHandler = {
             reasonInput
           )
       );
-
-      /*
-      |--------------------------------------------------------------------------
-      | Register Close Modal Handler
-      |--------------------------------------------------------------------------
-      */
 
       if (client?.modals?.set) {
         client.modals.set(
@@ -1049,17 +1019,216 @@ const claimTicketHandler = {
 
 /*
 |--------------------------------------------------------------------------
-| PRIORITY BUTTON
+| UNCLAIM TICKET
+|--------------------------------------------------------------------------
+*/
+
+const unclaimTicketHandler = {
+  name: 'ticket_unclaim',
+
+  async execute(
+    interaction,
+    client
+  ) {
+    try {
+      if (
+        !(await ensureGuildContext(
+          interaction
+        ))
+      ) {
+        return;
+      }
+
+      await assertTicketPermission(
+        interaction,
+        client,
+        'unclaim tickets',
+        {},
+        2000
+      );
+
+      const deferSuccess =
+        await InteractionHelper.safeDefer(
+          interaction,
+          {
+            flags:
+              MessageFlags.Ephemeral,
+          }
+        );
+
+      if (!deferSuccess) {
+        return;
+      }
+
+      const {
+        unclaimTicket,
+      } = await import(
+        '../services/ticket.js'
+      );
+
+      await unclaimTicket(
+        interaction.channel,
+        interaction.user
+      );
+
+      await interaction.editReply({
+        embeds: [
+          successEmbed(
+            'Ticket Unclaimed',
+            'This ticket has been unclaimed.'
+          ),
+        ],
+      });
+
+    } catch (error) {
+      logger.error(
+        'Error unclaiming ticket:',
+        error
+      );
+
+      if (
+        !interaction.replied &&
+        !interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'An error occurred while unclaiming the ticket.',
+          }
+        );
+      } else if (
+        interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'An error occurred while unclaiming the ticket.',
+          }
+        );
+      }
+    }
+  },
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| PING USER
 |--------------------------------------------------------------------------
 |
-| Clicking Priority opens:
+| Only staff who can manage the ticket can use this button.
 |
-| ⚪ None
-| 🟢 Low
-| 🟡 Medium
-| 🔴 High
-| 🚨 Urgent
-|
+| The service itself enforces the 4-hour cooldown, so even a stale
+| button cannot bypass the cooldown.
+|--------------------------------------------------------------------------
+*/
+
+const pingTicketUserHandler = {
+  name: 'ticket_ping_user',
+
+  async execute(
+    interaction,
+    client
+  ) {
+    try {
+      if (
+        !(await ensureGuildContext(
+          interaction
+        ))
+      ) {
+        return;
+      }
+
+      await assertTicketPermission(
+        interaction,
+        client,
+        'ping the ticket creator',
+        {},
+        2000
+      );
+
+      const deferSuccess =
+        await InteractionHelper.safeDefer(
+          interaction,
+          {
+            flags:
+              MessageFlags.Ephemeral,
+          }
+        );
+
+      if (!deferSuccess) {
+        return;
+      }
+
+      await pingTicketUser(
+        interaction.channel,
+        interaction.user
+      );
+
+      await interaction.editReply({
+        embeds: [
+          successEmbed(
+            'User Pinged',
+            'The ticket creator has been pinged.'
+          ),
+        ],
+      });
+
+    } catch (error) {
+      logger.error(
+        'Error pinging ticket user:',
+        error
+      );
+
+      if (
+        !interaction.replied &&
+        !interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'An error occurred while pinging the ticket creator.',
+          }
+        );
+      } else if (
+        interaction.deferred
+      ) {
+        await replyUserError(
+          interaction,
+          {
+            type:
+              error?.type ||
+              ErrorTypes.UNKNOWN,
+            message:
+              error?.userMessage ||
+              'An error occurred while pinging the ticket creator.',
+          }
+        );
+      }
+    }
+  },
+};
+
+
+/*
+|--------------------------------------------------------------------------
+| PRIORITY BUTTON
+|--------------------------------------------------------------------------
 */
 
 const priorityTicketHandler = {
@@ -1165,110 +1334,6 @@ const priorityTicketHandler = {
             message:
               error?.userMessage ||
               'Could not open the priority menu.',
-          }
-        );
-      }
-    }
-  },
-};
-
-
-/*
-|--------------------------------------------------------------------------
-| UNCLAIM TICKET
-|--------------------------------------------------------------------------
-*/
-
-const unclaimTicketHandler = {
-  name: 'ticket_unclaim',
-
-  async execute(
-    interaction,
-    client
-  ) {
-    try {
-      if (
-        !(await ensureGuildContext(
-          interaction
-        ))
-      ) {
-        return;
-      }
-
-      await assertTicketPermission(
-        interaction,
-        client,
-        'unclaim tickets',
-        {},
-        2000
-      );
-
-      const deferSuccess =
-        await InteractionHelper.safeDefer(
-          interaction,
-          {
-            flags:
-              MessageFlags.Ephemeral,
-          }
-        );
-
-      if (!deferSuccess) {
-        return;
-      }
-
-      const {
-        unclaimTicket,
-      } = await import(
-        '../services/ticket.js'
-      );
-
-      await unclaimTicket(
-        interaction.channel,
-        interaction.member
-      );
-
-      await interaction.editReply({
-        embeds: [
-          successEmbed(
-            'Ticket Unclaimed',
-            'This ticket has been unclaimed.'
-          ),
-        ],
-      });
-
-    } catch (error) {
-      logger.error(
-        'Error unclaiming ticket:',
-        error
-      );
-
-      if (
-        !interaction.replied &&
-        !interaction.deferred
-      ) {
-        await replyUserError(
-          interaction,
-          {
-            type:
-              error?.type ||
-              ErrorTypes.UNKNOWN,
-            message:
-              error?.userMessage ||
-              'An error occurred while unclaiming the ticket.',
-          }
-        );
-      } else if (
-        interaction.deferred
-      ) {
-        await replyUserError(
-          interaction,
-          {
-            type:
-              error?.type ||
-              ErrorTypes.UNKNOWN,
-            message:
-              error?.userMessage ||
-              'An error occurred while unclaiming the ticket.',
           }
         );
       }
@@ -1518,6 +1583,7 @@ export {
   claimTicketHandler,
   priorityTicketHandler,
   unclaimTicketHandler,
+  pingTicketUserHandler,
   reopenTicketHandler,
   deleteTicketHandler,
 };
