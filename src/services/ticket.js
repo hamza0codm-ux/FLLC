@@ -69,6 +69,18 @@ const TICKET_DELETE_DELAY_SECONDS =
 const TICKET_SERVICE =
   'ticketService';
 
+/*
+|--------------------------------------------------------------------------
+| Ping User Cooldown
+|--------------------------------------------------------------------------
+|
+| Ticket creator can only be pinged once every 4 hours.
+|
+*/
+
+const TICKET_USER_PING_COOLDOWN_MS =
+  4 * 60 * 60 * 1000;
+
 const OPEN_STATUS =
   '<a:Open:1546505803177922660> Open';
 
@@ -430,7 +442,80 @@ function buildTicketEmbed(
 
 export function buildTicketControlRow({
   claimedBy = null,
+  pingCooldownUntil = null,
 } = {}) {
+  const now =
+    Date.now();
+
+  const pingOnCooldown =
+    Number(
+      pingCooldownUntil || 0
+    ) > now;
+
+  if (claimedBy) {
+    return new ActionRowBuilder()
+      .addComponents(
+        new ButtonBuilder()
+          .setCustomId(
+            'ticket_unclaim'
+          )
+          .setLabel(
+            'Unclaim'
+          )
+          .setEmoji(
+            '↩️'
+          )
+          .setStyle(
+            ButtonStyle.Secondary
+          ),
+
+        new ButtonBuilder()
+          .setCustomId(
+            'ticket_ping_user'
+          )
+          .setLabel(
+            'Ping User'
+          )
+          .setEmoji(
+            '🔔'
+          )
+          .setStyle(
+            ButtonStyle.Secondary
+          )
+          .setDisabled(
+            pingOnCooldown
+          ),
+
+        new ButtonBuilder()
+          .setCustomId(
+            'ticket_priority'
+          )
+          .setLabel(
+            'Priority'
+          )
+          .setEmoji(
+            '💼'
+          )
+          .setStyle(
+            ButtonStyle.Secondary
+          ),
+
+        new ButtonBuilder()
+          .setCustomId(
+            'ticket_close'
+          )
+          .setLabel(
+            'Close'
+          )
+          .setEmoji(
+            '🔒'
+          )
+          .setStyle(
+            ButtonStyle.Danger
+          )
+      );
+  }
+
   return new ActionRowBuilder()
     .addComponents(
       new ButtonBuilder()
@@ -438,16 +523,30 @@ export function buildTicketControlRow({
           'ticket_claim'
         )
         .setLabel(
-          claimedBy
-            ? 'Claimed'
-            : 'Claim'
+          'Claim'
         )
-        .setEmoji('🙋‍♂️')
+        .setEmoji(
+          '🙋‍♂️'
+        )
         .setStyle(
           ButtonStyle.Primary
+        ),
+
+      new ButtonBuilder()
+        .setCustomId(
+          'ticket_ping_user'
+        )
+        .setLabel(
+          'Ping User'
+        )
+        .setEmoji(
+          '🔔'
+        )
+        .setStyle(
+          ButtonStyle.Secondary
         )
         .setDisabled(
-          Boolean(claimedBy)
+          pingOnCooldown
         ),
 
       new ButtonBuilder()
@@ -457,7 +556,9 @@ export function buildTicketControlRow({
         .setLabel(
           'Priority'
         )
-        .setEmoji('💼')
+        .setEmoji(
+          '💼'
+        )
         .setStyle(
           ButtonStyle.Secondary
         ),
@@ -469,7 +570,9 @@ export function buildTicketControlRow({
         .setLabel(
           'Close'
         )
-        .setEmoji('🔒')
+        .setEmoji(
+          '🔒'
+        )
         .setStyle(
           ButtonStyle.Danger
         )
@@ -538,6 +641,10 @@ async function updateTicketMessage(
           buildTicketControlRow({
             claimedBy:
               ticketData.claimedBy,
+
+            pingCooldownUntil:
+              ticketData.pingCooldownUntil ||
+              null,
           }),
         ];
 
@@ -750,6 +857,21 @@ export async function createTicket(
       claimedAt:
         null,
 
+      /*
+      |--------------------------------------------------------------------------
+      | Ping State
+      |--------------------------------------------------------------------------
+      */
+
+      pingCooldownUntil:
+        null,
+
+      lastPingedAt:
+        null,
+
+      lastPingedBy:
+        null,
+
       closedBy:
         null,
 
@@ -798,6 +920,9 @@ export async function createTicket(
       components: [
         buildTicketControlRow({
           claimedBy:
+            null,
+
+          pingCooldownUntil:
             null,
         }),
       ],
@@ -1036,6 +1161,36 @@ export async function unclaimTicket(
       );
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Only the staff member who claimed the ticket can unclaim it.
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      ticketData.claimedBy !==
+      unclaimer.id
+    ) {
+      ticketUserError(
+        'Not ticket claimer',
+        'Only the staff member who claimed this ticket can unclaim it.',
+        ErrorTypes.VALIDATION,
+        {
+          channelId:
+            channel.id,
+
+          claimedBy:
+            ticketData.claimedBy,
+
+          unclaimerId:
+            unclaimer.id,
+
+          operation:
+            'unclaimTicket',
+        }
+      );
+    }
+
     ticketData.claimedBy =
       null;
 
@@ -1113,6 +1268,250 @@ export async function unclaimTicket(
 
         unclaimerId:
           unclaimer?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Ping Ticket User
+|--------------------------------------------------------------------------
+*/
+
+export async function pingTicketUser(
+  channel,
+  pinger
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    if (
+      ticketData.status ===
+      'closed'
+    ) {
+      ticketUserError(
+        'Ticket closed',
+        'You cannot ping the ticket creator from a closed ticket.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    const now =
+      Date.now();
+
+    const cooldownUntil =
+      Number(
+        ticketData.pingCooldownUntil ||
+        0
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enforce cooldown server-side.
+    |--------------------------------------------------------------------------
+    |
+    | This is important because an old Discord button can still be clicked
+    | even after the visible button has been disabled.
+    |
+    */
+
+    if (
+      cooldownUntil > now
+    ) {
+      const remainingMs =
+        cooldownUntil -
+        now;
+
+      const remainingMinutes =
+        Math.ceil(
+          remainingMs /
+          60000
+        );
+
+      const hours =
+        Math.floor(
+          remainingMinutes /
+          60
+        );
+
+      const minutes =
+        remainingMinutes %
+        60;
+
+      let remainingText;
+
+      if (
+        hours > 0
+      ) {
+        remainingText =
+          minutes > 0
+            ? `${hours}h ${minutes}m`
+            : `${hours}h`;
+      } else {
+        remainingText =
+          `${minutes}m`;
+      }
+
+      ticketUserError(
+        'Ping cooldown active',
+        `The ticket creator was already pinged recently. Try again in **${remainingText}**.`,
+        ErrorTypes.VALIDATION,
+        {
+          channelId:
+            channel.id,
+
+          userId:
+            ticketData.userId,
+
+          cooldownUntil:
+            new Date(
+              cooldownUntil
+            ).toISOString(),
+
+          pingerId:
+            pinger.id,
+        }
+      );
+    }
+
+    const ticketUser =
+      await channel.client.users.fetch(
+        ticketData.userId
+      );
+
+    if (
+      !ticketUser
+    ) {
+      ticketUserError(
+        'Ticket user not found',
+        'I could not find the user who created this ticket.',
+        ErrorTypes.NOT_FOUND,
+        {
+          userId:
+            ticketData.userId,
+
+          channelId:
+            channel.id,
+        }
+      );
+    }
+
+    const newCooldownUntil =
+      now +
+      TICKET_USER_PING_COOLDOWN_MS;
+
+    ticketData.pingCooldownUntil =
+      newCooldownUntil;
+
+    ticketData.lastPingedAt =
+      new Date(
+        now
+      ).toISOString();
+
+    ticketData.lastPingedBy =
+      pinger.id;
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    await channel.send({
+      content:
+        `${ticketUser}, **${pinger}** is requesting your attention in this ticket.`,
+
+      allowedMentions: {
+        users: [
+          ticketData.userId,
+        ],
+
+        roles: [],
+
+        repliedUser:
+          false,
+      },
+    });
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'ping_user',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          pinger.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        metadata: {
+          pingedAt:
+            ticketData.lastPingedAt,
+
+          cooldownUntil:
+            new Date(
+              newCooldownUntil
+            ).toISOString(),
+        },
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'pingTicketUser',
+      'Failed to ping the ticket creator. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        pingerId:
+          pinger?.id,
       }
     );
   }
@@ -1346,7 +1745,9 @@ export async function closeTicket(
             .setStyle(
               ButtonStyle.Success
             )
-            .setEmoji('🔓'),
+            .setEmoji(
+              '🔓'
+            ),
 
           new ButtonBuilder()
             .setCustomId(
@@ -1358,7 +1759,9 @@ export async function closeTicket(
             .setStyle(
               ButtonStyle.Danger
             )
-            .setEmoji('🗑️')
+            .setEmoji(
+              '🗑️'
+            )
         );
 
     await channel.send({
@@ -1373,157 +1776,183 @@ export async function closeTicket(
 
 
     /*
-|--------------------------------------------------------------------------
-| Send Review DM to Ticket Creator
-|--------------------------------------------------------------------------
-*/
-
-try {
-  const ticketCreator =
-    await channel.client.users.fetch(
-      ticketData.userId
-    );
-
-  if (ticketCreator) {
-    const reviewEmbed =
-      createEmbed({
-        title:
-          'How was your support experience?',
-
-        description:
-          `We'd love to know how we did with **ticket-${String(ticketData.id).padStart(3, '0')}**.\n` +
-          'Select a rating below — it only takes a second!',
-
-        color:
-          0xF8D568,
-      });
-
-    /*
     |--------------------------------------------------------------------------
-    | Rating Buttons
+    | Send Review DM to Ticket Creator
     |--------------------------------------------------------------------------
     */
 
-    const reviewRow =
-      new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId(
-              `ticket_feedback:${channel.guild.id}:${channel.id}:1`
-            )
-            .setLabel('1')
-            .setEmoji('⭐')
-            .setStyle(
-              ButtonStyle.Secondary
-            ),
-
-          new ButtonBuilder()
-            .setCustomId(
-              `ticket_feedback:${channel.guild.id}:${channel.id}:2`
-            )
-            .setLabel('2')
-            .setEmoji('⭐')
-            .setStyle(
-              ButtonStyle.Secondary
-            ),
-
-          new ButtonBuilder()
-            .setCustomId(
-              `ticket_feedback:${channel.guild.id}:${channel.id}:3`
-            )
-            .setLabel('3')
-            .setEmoji('⭐')
-            .setStyle(
-              ButtonStyle.Secondary
-            ),
-
-          new ButtonBuilder()
-            .setCustomId(
-              `ticket_feedback:${channel.guild.id}:${channel.id}:4`
-            )
-            .setLabel('4')
-            .setEmoji('⭐')
-            .setStyle(
-              ButtonStyle.Secondary
-            ),
-
-          new ButtonBuilder()
-            .setCustomId(
-              `ticket_feedback:${channel.guild.id}:${channel.id}:5`
-            )
-            .setLabel('5')
-            .setEmoji('⭐')
-            .setStyle(
-              ButtonStyle.Secondary
-            )
+    try {
+      const ticketCreator =
+        await channel.client.users.fetch(
+          ticketData.userId
         );
 
-    /*
-    |--------------------------------------------------------------------------
-    | Comment / Decline Buttons
-    |--------------------------------------------------------------------------
-    */
+      if (ticketCreator) {
+        const reviewEmbed =
+          createEmbed({
+            title:
+              'How was your support experience?',
 
-    const commentRow =
-      new ActionRowBuilder()
-        .addComponents(
-          new ButtonBuilder()
-            .setCustomId(
-              `ticket_feedback_comment:${channel.guild.id}:${channel.id}`
-            )
-            .setLabel(
-              'Add Comment'
-            )
-            .setEmoji('📨')
-            .setStyle(
-              ButtonStyle.Secondary
-            ),
+            description:
+              `We'd love to know how we did with **ticket-${String(ticketData.id).padStart(3, '0')}**.\n` +
+              'Select a rating below — it only takes a second!',
 
-          new ButtonBuilder()
-            .setCustomId(
-              'ticket_feedback_decline'
-            )
-            .setLabel(
-              'No thanks'
-            )
-            .setEmoji('❌')
-            .setStyle(
-              ButtonStyle.Secondary
-            )
+            color:
+              0xF8D568,
+          });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Rating Buttons
+        |--------------------------------------------------------------------------
+        */
+
+        const reviewRow =
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:1`
+                )
+                .setLabel(
+                  '1'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:2`
+                )
+                .setLabel(
+                  '2'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:3`
+                )
+                .setLabel(
+                  '3'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:4`
+                )
+                .setLabel(
+                  '4'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:5`
+                )
+                .setLabel(
+                  '5'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                )
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Comment / Decline Buttons
+        |--------------------------------------------------------------------------
+        */
+
+        const commentRow =
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback_comment:${channel.guild.id}:${channel.id}`
+                )
+                .setLabel(
+                  'Add Comment'
+                )
+                .setEmoji(
+                  '📨'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  'ticket_feedback_decline'
+                )
+                .setLabel(
+                  'No thanks'
+                )
+                .setEmoji(
+                  '❌'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                )
+            );
+
+        await ticketCreator.send({
+          embeds: [
+            reviewEmbed,
+          ],
+
+          components: [
+            reviewRow,
+            commentRow,
+          ],
+        });
+
+        logger.info(
+          'Ticket review DM sent successfully',
+          {
+            channelId:
+              channel.id,
+
+            ticketNumber:
+              ticketData.ticketNumber ||
+              ticketData.id,
+
+            userId:
+              ticketData.userId,
+          }
         );
-
-    await ticketCreator.send({
-      embeds: [
-        reviewEmbed,
-      ],
-
-      components: [
-        reviewRow,
-        commentRow,
-      ],
-    });
-
-    logger.info(
-      'Ticket review DM sent successfully',
-      {
-        channelId:
-          channel.id,
-
-        ticketNumber:
-          ticketData.ticketNumber ||
-          ticketData.id,
-
-        userId:
-          ticketData.userId,
       }
-    );
-  }
 
-} catch (dmError) {
-  logger.warn(
-    `Could not DM ticket review to ticket creator ${ticketData.userId}: ${dmError.message}`
-  );
-}
+    } catch (dmError) {
+      logger.warn(
+        `Could not DM ticket review to ticket creator ${ticketData.userId}: ${dmError.message}`
+      );
+    }
+
+
     /*
     |--------------------------------------------------------------------------
     | Ticket Close Log
@@ -2190,49 +2619,50 @@ export async function deleteTicket(
     */
 
     setTimeout(
-  async () => {
-    try {
-      /*
-      |--------------------------------------------------------------------------
-      | Preserve ticket data for the review survey
-      |--------------------------------------------------------------------------
-      |
-      | The ticket channel is deleted, but the database record must remain
-      | so the ticket creator can still submit their review from DMs.
-      |
-      */
+      async () => {
+        try {
+          /*
+          |--------------------------------------------------------------------------
+          | Preserve ticket data for the review survey
+          |--------------------------------------------------------------------------
+          |
+          | The ticket channel is deleted, but the database record must remain
+          | so the ticket creator can still submit their review from DMs.
+          |
+          */
 
-      ticketData.status =
-        'deleted';
+          ticketData.status =
+            'deleted';
 
-      ticketData.deletedAt =
-        new Date().toISOString();
+          ticketData.deletedAt =
+            new Date().toISOString();
 
-      await saveTicketData(
-        channel.guild.id,
-        channel.id,
-        ticketData
-      );
+          await saveTicketData(
+            channel.guild.id,
+            channel.id,
+            ticketData
+          );
 
-      /*
-      |--------------------------------------------------------------------------
-      | Delete the Discord channel
-      |--------------------------------------------------------------------------
-      */
+          /*
+          |--------------------------------------------------------------------------
+          | Delete the Discord channel
+          |--------------------------------------------------------------------------
+          */
 
-      await channel.delete(
-        'Ticket deleted permanently'
-      );
+          await channel.delete(
+            'Ticket deleted permanently'
+          );
 
-    } catch (error) {
-      logger.error(
-        'Unexpected error during ticket deletion:',
-        error
-      );
-    }
-  },
-  TICKET_DELETE_DELAY_MS
-);
+        } catch (error) {
+          logger.error(
+            'Unexpected error during ticket deletion:',
+            error
+          );
+        }
+      },
+      TICKET_DELETE_DELAY_MS
+    );
+
     return ticketData;
 
   } catch (error) {
