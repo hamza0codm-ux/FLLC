@@ -69,15 +69,13 @@ const TICKET_DELETE_DELAY_SECONDS =
 const TICKET_SERVICE =
   'ticketService';
 
+
 /*
 |--------------------------------------------------------------------------
 | Ping User Cooldown
 |--------------------------------------------------------------------------
 |
-| Ticket creator can be pinged once every 4 hours.
-|
-| The button is intentionally NOT disabled during the cooldown.
-| The cooldown is enforced server-side inside pingTicketUser().
+| Ticket creator can only be pinged once every 4 hours.
 |
 */
 
@@ -441,19 +439,6 @@ function buildTicketEmbed(
 |--------------------------------------------------------------------------
 | Ticket Controls
 |--------------------------------------------------------------------------
-|
-| IMPORTANT:
-| Ping User is intentionally NEVER disabled here.
-|
-| The 4-hour cooldown is checked server-side by pingTicketUser().
-| This means:
-|
-| - Button remains available
-| - Staff can click it at any time
-| - Cooldown is checked securely
-| - After 4 hours it automatically works again
-| - Bot restarts do not reset the cooldown
-|
 */
 
 export function buildTicketControlRow({
@@ -675,4 +660,2044 @@ export async function createTicket(
       !member
     ) {
       ticketUserError(
-        'Invalid ticket context
+        'Invalid ticket context',
+        'Unable to create the ticket.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    const openCount =
+      await getOpenTicketCountForUser(
+        guild.id,
+        member.id
+      );
+
+    if (
+      openCount >= 3
+    ) {
+      ticketUserError(
+        'Ticket limit reached',
+        'You already have the maximum number of open tickets.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    const panelType =
+      String(
+        options.panelType ||
+        'normal'
+      ).toLowerCase();
+
+    const ticketTypeKey =
+      options.ticketTypeKey ||
+      ticketType ||
+      'ticket';
+
+    const ticketTypeLabel =
+      options.ticketType ||
+      ticketTypeKey;
+
+    const staffRoleId =
+      options.staffRoleId ||
+      null;
+
+    const ticketLogsChannelId =
+      options.ticketLogsChannelId ||
+      null;
+
+    const transcriptLogsChannelId =
+      options.transcriptLogsChannelId ||
+      null;
+
+    const reviewLogsChannelId =
+      options.reviewLogsChannelId ||
+      null;
+
+    const teamText =
+      options.teamText ||
+      DEFAULT_TEAM_TEXT;
+
+    const ticketNumber =
+      await getNextTicketNumber(
+        guild.id
+      );
+
+    const baseName =
+      await generateTicketChannelName(
+        guild,
+        ticketTypeKey,
+        member
+      );
+
+    const channel =
+      await guild.channels.create({
+        name:
+          baseName,
+
+        type:
+          ChannelType.GuildText,
+
+        parent:
+          categoryId || null,
+
+        permissionOverwrites: [
+          {
+            id:
+              guild.roles.everyone.id,
+
+            deny: [
+              PermissionFlagsBits.ViewChannel,
+            ],
+          },
+
+          {
+            id:
+              member.id,
+
+            allow: [
+              PermissionFlagsBits.ViewChannel,
+              PermissionFlagsBits.SendMessages,
+              PermissionFlagsBits.ReadMessageHistory,
+              PermissionFlagsBits.AttachFiles,
+            ],
+          },
+
+          ...(staffRoleId
+            ? [
+                {
+                  id:
+                    staffRoleId,
+
+                  allow: [
+                    PermissionFlagsBits.ViewChannel,
+                    PermissionFlagsBits.SendMessages,
+                    PermissionFlagsBits.ReadMessageHistory,
+                    PermissionFlagsBits.AttachFiles,
+                    PermissionFlagsBits.ManageMessages,
+                  ],
+                },
+              ]
+            : []),
+        ],
+      });
+
+    const autoHighPriority =
+      AUTO_HIGH_PRIORITY_ROLE_IDS.some(
+        roleId =>
+          member.roles?.cache?.has(
+            roleId
+          )
+      );
+
+    const initialPriority =
+      autoHighPriority
+        ? 'high'
+        : 'none';
+
+    const ticketData = {
+      id:
+        ticketNumber,
+
+      ticketNumber,
+
+      channelId:
+        channel.id,
+
+      guildId:
+        guild.id,
+
+      userId:
+        member.id,
+
+      userMention:
+        `<@${member.id}>`,
+
+      username:
+        member.user?.username ||
+        member.displayName,
+
+      panelType,
+
+      ticketType:
+        ticketTypeLabel,
+
+      ticketTypeKey,
+
+      reason:
+        reason ||
+        'Not provided',
+
+      priority:
+        initialPriority,
+
+      status:
+        'open',
+
+      claimedBy:
+        null,
+
+      claimedAt:
+        null,
+
+      /*
+      |--------------------------------------------------------------------------
+      | Ping State
+      |--------------------------------------------------------------------------
+      */
+
+      pingCooldownUntil:
+        null,
+
+      lastPingedAt:
+        null,
+
+      lastPingedBy:
+        null,
+
+      closedBy:
+        null,
+
+      closedAt:
+        null,
+
+      closeReason:
+        null,
+
+      createdAt:
+        new Date().toISOString(),
+
+      categoryId:
+        categoryId || null,
+
+      staffRoleId,
+
+      teamText,
+
+      ticketLogsChannelId,
+
+      transcriptLogsChannelId,
+
+      reviewLogsChannelId,
+    };
+
+    await saveTicketData(
+      guild.id,
+      channel.id,
+      ticketData
+    );
+
+    const embed =
+      buildTicketEmbed(
+        ticketData
+      );
+
+    await channel.send({
+      content:
+        `${member}`,
+
+      embeds: [
+        embed,
+      ],
+
+      components: [
+        buildTicketControlRow({
+          claimedBy:
+            null,
+        }),
+      ],
+
+      allowedMentions: {
+        users: [
+          member.id,
+        ],
+
+        roles: [],
+      },
+    });
+
+    if (
+      initialPriority !==
+      'none'
+    ) {
+      const priorityName =
+        applyPriorityToName(
+          channel.name,
+          initialPriority
+        );
+
+      await channel.setName(
+        priorityName
+      );
+    }
+
+    await logTicketEvent({
+      client:
+        guild.client,
+
+      guildId:
+        guild.id,
+
+      event: {
+        type:
+          'open',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber,
+
+        userId:
+          member.id,
+
+        panelType,
+
+        ticketData,
+
+        ticketLogsChannelId,
+
+        transcriptLogsChannelId,
+
+        reviewLogsChannelId,
+
+        reason:
+          reason ||
+          'Not provided',
+      },
+    });
+
+    return {
+      channel,
+      ticketData,
+    };
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'createTicket',
+      'Failed to create ticket. Please try again in a moment.',
+      {
+        guildId:
+          guild?.id,
+
+        userId:
+          member?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Claim Ticket
+|--------------------------------------------------------------------------
+*/
+
+export async function claimTicket(
+  channel,
+  claimer
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    if (
+      ticketData.claimedBy
+    ) {
+      ticketUserError(
+        'Ticket already claimed',
+        `This ticket is already claimed by <@${ticketData.claimedBy}>`,
+        ErrorTypes.VALIDATION,
+        {
+          channelId:
+            channel.id,
+
+          claimedBy:
+            ticketData.claimedBy,
+
+          operation:
+            'claimTicket',
+        }
+      );
+    }
+
+    ticketData.claimedBy =
+      claimer.id;
+
+    ticketData.claimedAt =
+      new Date().toISOString();
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'claim',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          claimer.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        metadata: {
+          claimedAt:
+            ticketData.claimedAt,
+        },
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'claimTicket',
+      'Failed to claim ticket. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        claimerId:
+          claimer?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Unclaim Ticket
+|--------------------------------------------------------------------------
+*/
+
+export async function unclaimTicket(
+  channel,
+  unclaimer
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    if (
+      !ticketData.claimedBy
+    ) {
+      ticketUserError(
+        'Ticket not claimed',
+        'This ticket is not currently claimed.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Only the staff member who claimed the ticket can unclaim it.
+    |--------------------------------------------------------------------------
+    */
+
+    if (
+      ticketData.claimedBy !==
+      unclaimer.id
+    ) {
+      ticketUserError(
+        'Not ticket claimer',
+        'Only the staff member who claimed this ticket can unclaim it.',
+        ErrorTypes.VALIDATION,
+        {
+          channelId:
+            channel.id,
+
+          claimedBy:
+            ticketData.claimedBy,
+
+          unclaimerId:
+            unclaimer.id,
+
+          operation:
+            'unclaimTicket',
+        }
+      );
+    }
+
+    ticketData.claimedBy =
+      null;
+
+    ticketData.claimedAt =
+      null;
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'unclaim',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          unclaimer.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        metadata: {
+          unclaimedAt:
+            new Date().toISOString(),
+        },
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'unclaimTicket',
+      'Failed to unclaim ticket. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        unclaimerId:
+          unclaimer?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Ping Ticket User
+|--------------------------------------------------------------------------
+*/
+
+export async function pingTicketUser(
+  channel,
+  pinger
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    if (
+      ticketData.status ===
+      'closed'
+    ) {
+      ticketUserError(
+        'Ticket closed',
+        'You cannot ping the ticket creator from a closed ticket.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    const now =
+      Date.now();
+
+    const cooldownUntil =
+      Number(
+        ticketData.pingCooldownUntil ||
+        0
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Enforce the 4-hour cooldown server-side.
+    |--------------------------------------------------------------------------
+    |
+    | The button stays enabled so it automatically becomes usable again
+    | after 4 hours. The database timestamp prevents users from bypassing
+    | the cooldown by clicking an old button.
+    |
+    */
+
+    if (
+      cooldownUntil > now
+    ) {
+      const remainingMs =
+        cooldownUntil -
+        now;
+
+      const remainingMinutes =
+        Math.ceil(
+          remainingMs /
+          60000
+        );
+
+      const hours =
+        Math.floor(
+          remainingMinutes /
+          60
+        );
+
+      const minutes =
+        remainingMinutes %
+        60;
+
+      let remainingText;
+
+      if (
+        hours > 0
+      ) {
+        remainingText =
+          minutes > 0
+            ? `${hours}h ${minutes}m`
+            : `${hours}h`;
+      } else {
+        remainingText =
+          `${minutes}m`;
+      }
+
+      ticketUserError(
+        'Ping cooldown active',
+        `The ticket creator was already pinged recently. Try again in **${remainingText}**.`,
+        ErrorTypes.VALIDATION,
+        {
+          channelId:
+            channel.id,
+
+          userId:
+            ticketData.userId,
+
+          cooldownUntil:
+            new Date(
+              cooldownUntil
+            ).toISOString(),
+
+          pingerId:
+            pinger.id,
+        }
+      );
+    }
+
+    const ticketUser =
+      await channel.client.users.fetch(
+        ticketData.userId
+      );
+
+    if (
+      !ticketUser
+    ) {
+      ticketUserError(
+        'Ticket user not found',
+        'I could not find the user who created this ticket.',
+        ErrorTypes.NOT_FOUND,
+        {
+          userId:
+            ticketData.userId,
+
+          channelId:
+            channel.id,
+        }
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Start a fresh 4-hour cooldown.
+    |--------------------------------------------------------------------------
+    */
+
+    const newCooldownUntil =
+      now +
+      TICKET_USER_PING_COOLDOWN_MS;
+
+    ticketData.pingCooldownUntil =
+      newCooldownUntil;
+
+    ticketData.lastPingedAt =
+      new Date(
+        now
+      ).toISOString();
+
+    ticketData.lastPingedBy =
+      pinger.id;
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    await channel.send({
+      content:
+        `${ticketUser} When you are available please respond to this ticket.`,
+
+      allowedMentions: {
+        users: [
+          ticketData.userId,
+        ],
+
+        roles: [],
+
+        repliedUser:
+          false,
+      },
+    });
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'ping_user',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          pinger.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        metadata: {
+          pingedAt:
+            ticketData.lastPingedAt,
+
+          cooldownUntil:
+            new Date(
+              newCooldownUntil
+            ).toISOString(),
+        },
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'pingTicketUser',
+      'Failed to ping the ticket creator. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        pingerId:
+          pinger?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Update Ticket Priority
+|--------------------------------------------------------------------------
+*/
+
+export async function updateTicketPriority(
+  channel,
+  priority,
+  executor
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    const normalizedPriority =
+      String(
+        priority ||
+        'none'
+      ).toLowerCase();
+
+    if (
+      !PRIORITY_MAP[
+        normalizedPriority
+      ]
+    ) {
+      ticketUserError(
+        'Invalid priority',
+        'That is not a valid ticket priority.',
+        ErrorTypes.VALIDATION,
+        {
+          priority:
+            normalizedPriority,
+        }
+      );
+    }
+
+    ticketData.priority =
+      normalizedPriority;
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    const newName =
+      applyPriorityToName(
+        channel.name,
+        normalizedPriority
+      );
+
+    if (
+      channel.name !==
+      newName
+    ) {
+      await channel.setName(
+        newName
+      );
+    }
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'priority',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          executor.id,
+
+        priority:
+          normalizedPriority,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'updateTicketPriority',
+      'Failed to update ticket priority. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        executorId:
+          executor?.id,
+
+        priority,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Close Ticket
+|--------------------------------------------------------------------------
+*/
+
+export async function closeTicket(
+  channel,
+  closer,
+  reason = 'No reason provided'
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    if (
+      ticketData.status ===
+      'closed'
+    ) {
+      ticketUserError(
+        'Ticket already closed',
+        'This ticket is already closed.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    ticketData.status =
+      'closed';
+
+    ticketData.closedBy =
+      closer.id;
+
+    ticketData.closedAt =
+      new Date().toISOString();
+
+    ticketData.closeReason =
+      reason;
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    const closerMention =
+      `<@${closer.id}>`;
+
+    const closeEmbed =
+      createEmbed({
+        title:
+          'Ticket Closed',
+
+        description:
+          `This ticket has been closed by ${closerMention}.\n` +
+          `**Reason:** ${reason}`,
+
+        color:
+          0xED4245,
+
+        footer: {
+          text:
+            `Ticket #${ticketData.id}`,
+        },
+      });
+
+    const controlRow =
+      new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(
+              'ticket_reopen'
+            )
+            .setLabel(
+              'Reopen Ticket'
+            )
+            .setStyle(
+              ButtonStyle.Success
+            )
+            .setEmoji(
+              '🔓'
+            ),
+
+          new ButtonBuilder()
+            .setCustomId(
+              'ticket_delete'
+            )
+            .setLabel(
+              'Delete Ticket'
+            )
+            .setStyle(
+              ButtonStyle.Danger
+            )
+            .setEmoji(
+              '🗑️'
+            )
+        );
+
+    await channel.send({
+      embeds: [
+        closeEmbed,
+      ],
+
+      components: [
+        controlRow,
+      ],
+    });
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Send Review DM to Ticket Creator
+    |--------------------------------------------------------------------------
+    */
+
+    try {
+      const ticketCreator =
+        await channel.client.users.fetch(
+          ticketData.userId
+        );
+
+      if (ticketCreator) {
+        const reviewEmbed =
+          createEmbed({
+            title:
+              'How was your support experience?',
+
+            description:
+              `We'd love to know how we did with **ticket-${String(ticketData.id).padStart(3, '0')}**.\n` +
+              'Select a rating below — it only takes a second!',
+
+            color:
+              0xF8D568,
+          });
+
+        /*
+        |--------------------------------------------------------------------------
+        | Rating Buttons
+        |--------------------------------------------------------------------------
+        */
+
+        const reviewRow =
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:1`
+                )
+                .setLabel(
+                  '1'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:2`
+                )
+                .setLabel(
+                  '2'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:3`
+                )
+                .setLabel(
+                  '3'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:4`
+                )
+                .setLabel(
+                  '4'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback:${channel.guild.id}:${channel.id}:5`
+                )
+                .setLabel(
+                  '5'
+                )
+                .setEmoji(
+                  '⭐'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                )
+            );
+
+        /*
+        |--------------------------------------------------------------------------
+        | Comment / Decline Buttons
+        |--------------------------------------------------------------------------
+        */
+
+        const commentRow =
+          new ActionRowBuilder()
+            .addComponents(
+              new ButtonBuilder()
+                .setCustomId(
+                  `ticket_feedback_comment:${channel.guild.id}:${channel.id}`
+                )
+                .setLabel(
+                  'Add Comment'
+                )
+                .setEmoji(
+                  '📨'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                ),
+
+              new ButtonBuilder()
+                .setCustomId(
+                  'ticket_feedback_decline'
+                )
+                .setLabel(
+                  'No thanks'
+                )
+                .setEmoji(
+                  '❌'
+                )
+                .setStyle(
+                  ButtonStyle.Secondary
+                )
+            );
+
+        await ticketCreator.send({
+          embeds: [
+            reviewEmbed,
+          ],
+
+          components: [
+            reviewRow,
+            commentRow,
+          ],
+        });
+
+        logger.info(
+          'Ticket review DM sent successfully',
+          {
+            channelId:
+              channel.id,
+
+            ticketNumber:
+              ticketData.ticketNumber ||
+              ticketData.id,
+
+            userId:
+              ticketData.userId,
+          }
+        );
+      }
+
+    } catch (dmError) {
+      logger.warn(
+        `Could not DM ticket review to ticket creator ${ticketData.userId}: ${dmError.message}`
+      );
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Ticket Close Log
+    |--------------------------------------------------------------------------
+    */
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'close',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          closer.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        reason,
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'closeTicket',
+      'Failed to close ticket. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        closerId:
+          closer?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Reopen Ticket
+|--------------------------------------------------------------------------
+*/
+
+export async function reopenTicket(
+  channel,
+  reopener
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    if (
+      ticketData.status !==
+      'closed'
+    ) {
+      ticketUserError(
+        'Ticket not closed',
+        'This ticket is not currently closed.',
+        ErrorTypes.VALIDATION
+      );
+    }
+
+    const config =
+      await getGuildConfig(
+        channel.client,
+        channel.guild.id
+      );
+
+    const openCategoryId =
+      ticketData.categoryId ||
+      config.ticketCategoryId ||
+      null;
+
+    ticketData.status =
+      'open';
+
+    ticketData.closedBy =
+      null;
+
+    ticketData.closedAt =
+      null;
+
+    ticketData.closeReason =
+      null;
+
+    await saveTicketData(
+      channel.guild.id,
+      channel.id,
+      ticketData
+    );
+
+    if (
+      openCategoryId &&
+      channel.parentId !==
+        openCategoryId
+    ) {
+      const openCategory =
+        channel.guild.channels.cache.get(
+          openCategoryId
+        ) ||
+        await channel.guild.channels.fetch(
+          openCategoryId
+        ).catch(
+          () => null
+        );
+
+      if (
+        openCategory?.type ===
+        ChannelType.GuildCategory
+      ) {
+        try {
+          await channel.setParent(
+            openCategoryId,
+            {
+              lockPermissions:
+                false,
+            }
+          );
+        } catch (error) {
+          logger.warn(
+            `Could not move reopened ticket ${channel.id}: ${error.message}`
+          );
+        }
+      }
+    }
+
+    try {
+      const user =
+        await channel.guild.members.fetch(
+          ticketData.userId
+        ).catch(
+          () => null
+        );
+
+      if (user) {
+        await channel.permissionOverwrites.edit(
+          user,
+          {
+            ViewChannel:
+              true,
+
+            SendMessages:
+              true,
+
+            ReadMessageHistory:
+              true,
+
+            AttachFiles:
+              true,
+          }
+        );
+      }
+    } catch (error) {
+      logger.warn(
+        `Could not restore access for user ${ticketData.userId}: ${error.message}`
+      );
+    }
+
+    await updateTicketMessage(
+      channel,
+      ticketData
+    );
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'reopen',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          reopener.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+      },
+    });
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'reopenTicket',
+      'Failed to reopen ticket. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        reopenerId:
+          reopener?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Build Transcript
+|--------------------------------------------------------------------------
+*/
+
+async function buildTicketTranscript(
+  channel
+) {
+  const messages =
+    await channel.messages.fetch({
+      limit: 100,
+    });
+
+  const sortedMessages =
+    [...messages.values()]
+      .sort(
+        (a, b) =>
+          a.createdTimestamp -
+          b.createdTimestamp
+      );
+
+  const lines = [];
+
+  lines.push(
+    `Fruity Ticket Transcript`
+  );
+
+  lines.push(
+    `Server: ${channel.guild.name}`
+  );
+
+  lines.push(
+    `Channel: #${channel.name}`
+  );
+
+  lines.push(
+    `Channel ID: ${channel.id}`
+  );
+
+  lines.push(
+    `Generated: ${new Date().toISOString()}`
+  );
+
+  lines.push(
+    ''
+  );
+
+  for (
+    const message of sortedMessages
+  ) {
+    const timestamp =
+      new Date(
+        message.createdTimestamp
+      ).toISOString();
+
+    const author =
+      message.author
+        ? `${message.author.tag} (${message.author.id})`
+        : 'Unknown User';
+
+    const content =
+      message.cleanContent ||
+      message.content ||
+      '';
+
+    lines.push(
+      `[${timestamp}] ${author}: ${content}`
+    );
+
+    if (
+      message.attachments?.size
+    ) {
+      for (
+        const attachment of
+        message.attachments.values()
+      ) {
+        lines.push(
+          `Attachment: ${attachment.url}`
+        );
+      }
+    }
+
+    if (
+      message.embeds?.length
+    ) {
+      lines.push(
+        `Embeds: ${message.embeds.length}`
+      );
+    }
+
+    lines.push('');
+  }
+
+  const transcript =
+    lines.join('\n');
+
+  return {
+    transcript,
+
+    messageCount:
+      sortedMessages.length,
+  };
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Delete Ticket
+|--------------------------------------------------------------------------
+*/
+
+export async function deleteTicket(
+  channel,
+  deleter
+) {
+  try {
+    const ticketData =
+      requireTicket(
+        await getTicketData(
+          channel.guild.id,
+          channel.id
+        ),
+        channel
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Save everything required before deleting the channel.
+    |--------------------------------------------------------------------------
+    */
+
+    const transcript =
+      await buildTicketTranscript(
+        channel
+      );
+
+    const transcriptBuffer =
+      Buffer.from(
+        transcript.transcript,
+        'utf8'
+      );
+
+    const transcriptAttachment =
+      new AttachmentBuilder(
+        transcriptBuffer,
+        {
+          name:
+            `${channel.name}-transcript.txt`,
+        }
+      );
+
+    /*
+    |--------------------------------------------------------------------------
+    | Transcript event
+    |--------------------------------------------------------------------------
+    |
+    | The transcript goes to:
+    |
+    | 1. The panel's transcript log channel
+    | 2. The ticket creator's DMs
+    |
+    */
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'transcript',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        metadata: {
+          messageCount:
+            transcript.messageCount,
+
+          duration:
+            ticketData.createdAt
+              ? `${Math.floor(
+                  (
+                    Date.now() -
+                    new Date(
+                      ticketData.createdAt
+                    ).getTime()
+                  ) / 1000
+                )} seconds`
+              : null,
+        },
+
+        attachments: [
+          transcriptAttachment,
+        ],
+      },
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | DM transcript to ticket creator
+    |--------------------------------------------------------------------------
+    */
+
+    try {
+      const ticketCreator =
+        await channel.client.users.fetch(
+          ticketData.userId
+        );
+
+      if (
+        ticketCreator
+      ) {
+        const dmEmbed =
+          buildStandardLogEmbed({
+            color:
+              0x57F287,
+
+            title:
+              '📄 Ticket Transcript',
+
+            inlineFields: [
+              {
+                name:
+                  'Ticket',
+
+                value:
+                  `#${ticketData.id}`,
+
+                inline:
+                  true,
+              },
+
+              {
+                name:
+                  'Panel',
+
+                value:
+                  ticketData.panelType ===
+                    'merch'
+                    ? 'Merch'
+                    : 'Normal',
+
+                inline:
+                  true,
+              },
+
+              {
+                name:
+                  'Messages',
+
+                value:
+                  String(
+                    transcript.messageCount
+                  ),
+
+                inline:
+                  true,
+              },
+            ],
+
+            fields: [
+              {
+                name:
+                  'Transcript',
+
+                value:
+                  'A copy of your Fruity ticket transcript is attached below.',
+
+                inline:
+                  false,
+              },
+            ],
+
+            footer: {
+              text:
+                'Fruity Ticketing',
+            },
+          });
+
+        const dmAttachment =
+          new AttachmentBuilder(
+            Buffer.from(
+              transcript.transcript,
+              'utf8'
+            ),
+            {
+              name:
+                `${channel.name}-transcript.txt`,
+            }
+          );
+
+        await ticketCreator.send({
+          embeds: [
+            dmEmbed,
+          ],
+
+          files: [
+            dmAttachment,
+          ],
+        });
+
+        logger.info(
+          'Transcript DM sent successfully',
+          {
+            channelId:
+              channel.id,
+
+            ticketNumber:
+              ticketData.ticketNumber ||
+              ticketData.id,
+
+            userId:
+              ticketData.userId,
+          }
+        );
+      }
+
+    } catch (dmError) {
+      logger.warn(
+        `Could not DM transcript to ticket creator ${ticketData.userId}: ${dmError.message}`
+      );
+    }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Ticket deletion log
+    |--------------------------------------------------------------------------
+    */
+
+    await logTicketEvent({
+      client:
+        channel.client,
+
+      guildId:
+        channel.guild.id,
+
+      event: {
+        type:
+          'delete',
+
+        ticketId:
+          channel.id,
+
+        ticketNumber:
+          ticketData.id,
+
+        userId:
+          ticketData.userId,
+
+        executorId:
+          deleter.id,
+
+        panelType:
+          ticketData.panelType,
+
+        ticketData,
+
+        ticketLogsChannelId:
+          ticketData.ticketLogsChannelId,
+
+        transcriptLogsChannelId:
+          ticketData.transcriptLogsChannelId,
+
+        reviewLogsChannelId:
+          ticketData.reviewLogsChannelId,
+
+        metadata: {
+          transcriptGenerated:
+            true,
+        },
+      },
+    });
+
+    /*
+    |--------------------------------------------------------------------------
+    | Delay deletion slightly so Discord has time to finish sending logs.
+    |--------------------------------------------------------------------------
+    */
+
+    setTimeout(
+      async () => {
+        try {
+          /*
+          |--------------------------------------------------------------------------
+          | Preserve ticket data for the review survey
+          |--------------------------------------------------------------------------
+          |
+          | The ticket channel is deleted, but the database record must remain
+          | so the ticket creator can still submit their review from DMs.
+          |
+          */
+
+          ticketData.status =
+            'deleted';
+
+          ticketData.deletedAt =
+            new Date().toISOString();
+
+          await saveTicketData(
+            channel.guild.id,
+            channel.id,
+            ticketData
+          );
+
+          /*
+          |--------------------------------------------------------------------------
+          | Delete the Discord channel
+          |--------------------------------------------------------------------------
+          */
+
+          await channel.delete(
+            'Ticket deleted permanently'
+          );
+
+        } catch (error) {
+          logger.error(
+            'Unexpected error during ticket deletion:',
+            error
+          );
+        }
+      },
+      TICKET_DELETE_DELAY_MS
+    );
+
+    return ticketData;
+
+  } catch (error) {
+    rethrowTicketError(
+      error,
+      'deleteTicket',
+      'Failed to delete ticket. Please try again in a moment.',
+      {
+        guildId:
+          channel?.guild?.id,
+
+        channelId:
+          channel?.id,
+
+        deleterId:
+          deleter?.id,
+      }
+    );
+  }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| User Ticket Count
+|--------------------------------------------------------------------------
+*/
+
+export async function getUserTicketCount(
+  guildId,
+  userId
+) {
+  return await getOpenTicketCountForUser(
+    guildId,
+    userId
+  );
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| Internal Ticket Number
+|--------------------------------------------------------------------------
+*/
+
+async function getNextTicketNumber(
+  guildId
+) {
+  return await incrementTicketCounter(
+    guildId
+  );
+}
