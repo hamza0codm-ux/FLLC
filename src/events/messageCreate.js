@@ -1,23 +1,32 @@
 import { Events } from 'discord.js';
 import { logger } from '../utils/logger.js';
+
 import {
   getLevelingConfig,
   getUserLevelData,
 } from '../services/leveling/leveling.js';
+
 import { addXp } from '../services/leveling/xpSystem.js';
+
 import { checkRateLimit } from '../utils/rateLimiter.js';
+
 import { parsePrefixCommand } from '../utils/prefixParser.js';
+
 import {
   supportsPrefixExecution,
   executePrefixCommand,
   resolvePrefixAccessKey,
 } from '../utils/messageAdapter.js';
+
 import {
   resolveCommandAlias,
   resolveSubcommandAlias,
 } from '../config/commands/commandAliases.js';
+
 import { getPrefixRestriction } from '../config/commands/prefixRestrictions.js';
+
 import { getGuildConfig } from '../services/config/guildConfig.js';
+
 import {
   getCommandPrefix,
   getBotMessage,
@@ -25,11 +34,15 @@ import {
   isCommandCategoryEnabled,
   isMaintenanceMode,
 } from '../config/bot.js';
+
 import {
   enforceAbuseProtection,
   formatCooldownDuration,
 } from '../utils/abuseProtection.js';
+
 import { createEmbed } from '../utils/embeds.js';
+
+import { isCommandEnabled } from '../services/commandAccessService.js';
 
 import {
   getCountingGameConfig,
@@ -428,8 +441,7 @@ async function handleLeveling(
       message.author.id;
 
     // --------------------------------------------------------
-    // Prevent XP spam from extremely rapid messages.
-    // This is separate from the normal leveling cooldown.
+    // Anti-spam rate limit
     // --------------------------------------------------------
 
     const rateLimitKey =
@@ -537,8 +549,8 @@ async function handleLeveling(
     // --------------------------------------------------------
     // XP cooldown
     //
-    // Uses the configured value exactly.
     // 0 = no cooldown.
+    // Default = 20 seconds.
     // --------------------------------------------------------
 
     const cooldownTime =
@@ -627,13 +639,15 @@ async function handleLeveling(
     // --------------------------------------------------------
     // ADD XP
     //
-    // IMPORTANT:
     // addXp expects:
-    // client,
-    // guildId,
-    // userId,
-    // amount,
-    // member
+    //
+    // addXp(
+    //   client,
+    //   guildId,
+    //   userId,
+    //   amount,
+    //   member
+    // )
     // --------------------------------------------------------
 
     const result =
