@@ -40,14 +40,11 @@ export const NORMAL_TICKET_CONFIG = {
 
   title: '🎫 Fruity Tickets',
 
-  description:
-    'Need help with Fruity? Select the option below that best matches what you need.',
-
   image:
     'https://media.discordapp.net/attachments/1380169626171871282/1546404725870563368/5.jpg?ex=6a9fa921&is=6a9e57a1&hm=5ecc5e7b557398bd5863b5d29e32be71fb4f50dead1bda411c88a54690dd287c&=&format=webp&width=2048&height=682',
 
   footer:
-    '🎫 Select the button that best matches your request to open a Fruity support ticket.',
+    'Any abuse with tickets will result in a ban',
 
   teamText:
     'The Fruity Support Team will assist you shortly,',
