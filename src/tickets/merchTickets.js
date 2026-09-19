@@ -19,7 +19,7 @@ const BRAND_COLOR = 0xF8D568;
 
 /*
 |--------------------------------------------------------------------------
-| MERCH TICKET PANEL CONFIG
+| MERCH TICKET CONFIG
 |--------------------------------------------------------------------------
 */
 
@@ -27,30 +27,18 @@ export const MERCH_TICKET_CONFIG = {
   key: 'merch',
 
   channelId: '1543031129559408660',
-
   categoryId: '1543352648021966949',
-
   staffRoleId: '1543556139462164480',
 
   ticketLogsChannelId: '1543331796568121467',
-
   transcriptLogsChannelId: '1543331916235931678',
-
   reviewLogsChannelId: '1543332129117708380',
 
-  title: '🛍️ Merch Tickets',
-
-  description:
-    'Need help with Fruity merchandise? Select the option below that best matches your request.',
-
   image:
-    'https://media.discordapp.net/attachments/1380169626171871282/1546404726193651803/6.jpg?ex=6a9fa921&is=6a9e57a1&hm=c9551eab504e942186cabd5af382283763b2753152fbdc36c7933489687cf0fb&=&format=webp&width=2048&height=682',
+    'https://cdn.discordapp.com/attachments/1380169626171871282/1546404726193651803/6.jpg',
 
   footer:
-    '🛍️ Select the button that best matches your request to open a Fruity merchandise support ticket.',
-
-  teamText:
-    'The Fruity Customer Service Team will assist you shortly,',
+    'Any abuse will result in a ban!',
 
   buttons: [
     {
@@ -60,6 +48,7 @@ export const MERCH_TICKET_CONFIG = {
         'Need help with returning an item?',
       emoji:
         '<a:No:1545795160586190858>',
+      createsTicket: true,
     },
 
     {
@@ -69,6 +58,7 @@ export const MERCH_TICKET_CONFIG = {
         'Have a question about Fruity merchandise?',
       emoji:
         '<:Questions:1546395162136154122>',
+      createsTicket: true,
     },
 
     {
@@ -78,6 +68,7 @@ export const MERCH_TICKET_CONFIG = {
         'Need help with shipping or delivery?',
       emoji:
         '<a:Package:1546271416436006942>',
+      createsTicket: true,
     },
   ],
 };
@@ -93,40 +84,13 @@ const MERCH_PANEL_STORAGE_KEY =
 
 /*
 |--------------------------------------------------------------------------
-| BUILD MERCH TICKET PANEL
+| BUILD MERCH PANEL
 |--------------------------------------------------------------------------
 */
 
 export function buildMerchTicketPanel() {
-  const container = new ContainerBuilder();
-
-  /*
-  |--------------------------------------------------------------------------
-  | TITLE + DESCRIPTION
-  |--------------------------------------------------------------------------
-  */
-
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `## ${MERCH_TICKET_CONFIG.title}\n${MERCH_TICKET_CONFIG.description}`
-    )
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | TOP DIVIDER
-  |--------------------------------------------------------------------------
-  */
-
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | TICKET OPTIONS
-  |--------------------------------------------------------------------------
-  */
+  const container = new ContainerBuilder()
+    .setAccentColor(BRAND_COLOR);
 
   for (
     let i = 0;
@@ -156,12 +120,6 @@ export function buildMerchTicketPanel() {
 
     container.addSectionComponents(section);
 
-    /*
-    |--------------------------------------------------------------------------
-    | LARGE SPACING BETWEEN OPTIONS
-    |--------------------------------------------------------------------------
-    */
-
     if (
       i <
       MERCH_TICKET_CONFIG.buttons.length - 1
@@ -177,36 +135,22 @@ export function buildMerchTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | DIVIDER BEFORE IMAGE
+  | IMAGE
   |--------------------------------------------------------------------------
   */
 
   container.addSeparatorComponents(
     new SeparatorBuilder()
+      .setSpacing(SeparatorSpacingSize.Large)
   );
-
-  /*
-  |--------------------------------------------------------------------------
-  | BANNER IMAGE
-  |--------------------------------------------------------------------------
-  */
 
   container.addMediaGalleryComponents(
     new MediaGalleryBuilder().addItems(
-      new MediaGalleryItemBuilder().setURL(
-        MERCH_TICKET_CONFIG.image
-      )
+      new MediaGalleryItemBuilder()
+        .setURL(
+          MERCH_TICKET_CONFIG.image
+        )
     )
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | DIVIDER BEFORE FOOTER
-  |--------------------------------------------------------------------------
-  */
-
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
   );
 
   /*
@@ -215,56 +159,53 @@ export function buildMerchTicketPanel() {
   |--------------------------------------------------------------------------
   */
 
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+  );
+
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
       MERCH_TICKET_CONFIG.footer
     )
   );
 
-  return [container];
+  return container;
 }
 
 /*
 |--------------------------------------------------------------------------
-| PANEL CONFIG HASH
+| PANEL HASH
 |--------------------------------------------------------------------------
 */
 
 function getMerchPanelHash() {
   const panelDefinition = {
-  version: 2,
-  key: MERCH_TICKET_CONFIG.key,
-    title: MERCH_TICKET_CONFIG.title,
-    description:
-      MERCH_TICKET_CONFIG.description,
+    version: 3,
+    key: MERCH_TICKET_CONFIG.key,
     image: MERCH_TICKET_CONFIG.image,
     footer: MERCH_TICKET_CONFIG.footer,
-    teamText:
-      MERCH_TICKET_CONFIG.teamText,
 
     buttons:
       MERCH_TICKET_CONFIG.buttons.map(
         (button) => ({
           key: button.key,
           label: button.label,
-          description:
-            button.description,
+          description: button.description,
           emoji: button.emoji,
+          createsTicket: button.createsTicket,
         })
       ),
   };
 
   return crypto
     .createHash('sha256')
-    .update(
-      JSON.stringify(panelDefinition)
-    )
+    .update(JSON.stringify(panelDefinition))
     .digest('hex');
 }
 
 /*
 |--------------------------------------------------------------------------
-| DATABASE HELPERS
+| DATABASE
 |--------------------------------------------------------------------------
 */
 
@@ -293,7 +234,12 @@ async function getMerchPanelStorage(
     }
 
     return stored;
-  } catch {
+  } catch (error) {
+    console.error(
+      '[Merch Tickets] Failed to read panel storage:',
+      error
+    );
+
     return null;
   }
 }
@@ -316,6 +262,54 @@ async function saveMerchPanelStorage(
     );
 
     return true;
+  } catch (error) {
+    console.error(
+      '[Merch Tickets] Failed to save panel storage:',
+      error
+    );
+
+    return false;
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| CHECK PANEL
+|--------------------------------------------------------------------------
+*/
+
+function isMerchTicketPanel(
+  message,
+  client
+) {
+  try {
+    if (!message) return false;
+
+    if (
+      message.author?.id !== client.user.id
+    ) {
+      return false;
+    }
+
+    if (
+      !message.components?.length
+    ) {
+      return false;
+    }
+
+    const json =
+      JSON.stringify(
+        message.components.map(
+          (component) =>
+            typeof component?.toJSON === 'function'
+              ? component.toJSON()
+              : component
+        )
+      );
+
+    return json.includes(
+      'create_ticket:merch:'
+    );
   } catch {
     return false;
   }
@@ -323,7 +317,7 @@ async function saveMerchPanelStorage(
 
 /*
 |--------------------------------------------------------------------------
-| FIND EXISTING MERCH PANEL
+| FIND EXISTING PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -338,44 +332,27 @@ async function findExistingMerchPanel(
       });
 
     return (
-      messages.find((message) => {
-        if (
-          message.author?.id !==
-          client.user.id
-        ) {
-          return false;
-        }
-
-        if (
-          !message.components?.length
-        ) {
-          return false;
-        }
-
-        const json =
-          JSON.stringify(
-            message.components.map(
-              (component) =>
-                typeof component?.toJSON ===
-                'function'
-                  ? component.toJSON()
-                  : component
-            )
-          );
-
-        return json.includes(
-          'create_ticket:merch:'
-        );
-      }) || null
+      messages.find(
+        (message) =>
+          isMerchTicketPanel(
+            message,
+            client
+          )
+      ) || null
     );
-  } catch {
+  } catch (error) {
+    console.error(
+      '[Merch Tickets] Failed to search for existing panel:',
+      error
+    );
+
     return null;
   }
 }
 
 /*
 |--------------------------------------------------------------------------
-| GET STORED MERCH PANEL MESSAGE
+| STORED PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -400,30 +377,9 @@ async function getStoredMerchPanelMessage(
   }
 
   if (
-    message.author?.id !==
-    client.user.id
-  ) {
-    return null;
-  }
-
-  if (!message.components?.length) {
-    return null;
-  }
-
-  const json =
-    JSON.stringify(
-      message.components.map(
-        (component) =>
-          typeof component?.toJSON ===
-          'function'
-            ? component.toJSON()
-            : component
-      )
-    );
-
-  if (
-    !json.includes(
-      'create_ticket:merch:'
+    !isMerchTicketPanel(
+      message,
+      client
     )
   ) {
     return null;
@@ -437,40 +393,65 @@ async function getStoredMerchPanelMessage(
 
 /*
 |--------------------------------------------------------------------------
-| RECONCILE MERCH PANEL
+| RECONCILE PANEL
 |--------------------------------------------------------------------------
 */
 
 export async function reconcileMerchTicketPanel(
   client
 ) {
+  if (!client) {
+    throw new Error(
+      '[Merch Tickets] Discord client was not provided.'
+    );
+  }
+
+  if (!client.user) {
+    throw new Error(
+      '[Merch Tickets] Discord client is not ready yet.'
+    );
+  }
+
   const channel =
     await client.channels
       .fetch(
         MERCH_TICKET_CONFIG.channelId
       )
-      .catch(() => null);
+      .catch((error) => {
+        console.error(
+          '[Merch Tickets] Failed to fetch panel channel:',
+          error
+        );
 
-  if (!channel?.isTextBased()) {
+        return null;
+      });
+
+  if (!channel) {
     throw new Error(
       `Merch ticket panel channel ${MERCH_TICKET_CONFIG.channelId} was not found.`
     );
   }
 
-  const components =
+  if (!channel.isTextBased()) {
+    throw new Error(
+      `Merch ticket panel channel ${MERCH_TICKET_CONFIG.channelId} is not a text channel.`
+    );
+  }
+
+  const container =
     buildMerchTicketPanel();
 
   const panelHash =
     getMerchPanelHash();
 
   const payload = {
-    components,
+    components: [container],
     flags: MessageFlags.IsComponentsV2,
   };
 
   /*
   |--------------------------------------------------------------------------
-  | STEP 1 — Try persisted message ID
+  | STORED MESSAGE
   |--------------------------------------------------------------------------
   */
 
@@ -486,32 +467,38 @@ export async function reconcileMerchTicketPanel(
       storage,
     } = storedResult;
 
-    /*
-    |--------------------------------------------------------------------------
-    | SAME CONFIG = DO ABSOLUTELY NOTHING
-    |--------------------------------------------------------------------------
-    */
-
     if (
       storage.configHash ===
       panelHash
     ) {
+      console.log(
+        `[Merch Tickets] Panel is already up to date (${message.id}).`
+      );
+
       return {
         created: false,
         changed: false,
         replaced: false,
         edited: false,
+        recovered: false,
         messageId: message.id,
       };
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | CONFIG CHANGED = EDIT EXISTING MESSAGE
-    |--------------------------------------------------------------------------
-    */
+    try {
+      await message.edit(payload);
+    } catch (error) {
+      console.error(
+        '[Merch Tickets] Failed to edit panel:',
+        error
+      );
 
-    await message.edit(payload);
+      throw new Error(
+        `Failed to edit the Merch ticket panel: ${
+          error?.message || error
+        }`
+      );
+    }
 
     await saveMerchPanelStorage(
       client,
@@ -525,18 +512,23 @@ export async function reconcileMerchTicketPanel(
       }
     );
 
+    console.log(
+      `[Merch Tickets] Panel updated (${message.id}).`
+    );
+
     return {
       created: false,
       changed: true,
       replaced: false,
       edited: true,
+      recovered: false,
       messageId: message.id,
     };
   }
 
   /*
   |--------------------------------------------------------------------------
-  | STEP 2 — SEARCH FOR AN EXISTING PANEL
+  | SEARCH BEFORE CREATING
   |--------------------------------------------------------------------------
   */
 
@@ -547,12 +539,6 @@ export async function reconcileMerchTicketPanel(
     );
 
   if (existing) {
-    /*
-    |--------------------------------------------------------------------------
-    | RECOVER EXISTING PANEL
-    |--------------------------------------------------------------------------
-    */
-
     await saveMerchPanelStorage(
       client,
       {
@@ -563,6 +549,10 @@ export async function reconcileMerchTicketPanel(
         recoveredAt:
           new Date().toISOString(),
       }
+    );
+
+    console.log(
+      `[Merch Tickets] Recovered existing panel (${existing.id}).`
     );
 
     return {
@@ -577,12 +567,27 @@ export async function reconcileMerchTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | STEP 3 — NO PANEL EXISTS
+  | CREATE
   |--------------------------------------------------------------------------
   */
 
-  const message =
-    await channel.send(payload);
+  let message;
+
+  try {
+    message =
+      await channel.send(payload);
+  } catch (error) {
+    console.error(
+      '[Merch Tickets] PANEL SEND FAILED:',
+      error
+    );
+
+    throw new Error(
+      `Failed to send the Merch ticket panel: ${
+        error?.message || error
+      }`
+    );
+  }
 
   await saveMerchPanelStorage(
     client,
@@ -594,6 +599,10 @@ export async function reconcileMerchTicketPanel(
       createdAt:
         new Date().toISOString(),
     }
+  );
+
+  console.log(
+    `[Merch Tickets] Panel created successfully (${message.id}).`
   );
 
   return {
@@ -608,7 +617,7 @@ export async function reconcileMerchTicketPanel(
 
 /*
 |--------------------------------------------------------------------------
-| GET MERCH TICKET TYPE
+| GET TICKET TYPE
 |--------------------------------------------------------------------------
 */
 
