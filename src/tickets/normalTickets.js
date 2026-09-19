@@ -38,16 +38,11 @@ export const NORMAL_TICKET_CONFIG = {
 
   reviewLogsChannelId: '1542859014499467285',
 
-  title: '🎫 Fruity Tickets',
-
   image:
     'https://media.discordapp.net/attachments/1380169626171871282/1546404725870563368/5.jpg?ex=6a9fa921&is=6a9e57a1&hm=5ecc5e7b557398bd5863b5d29e32be71fb4f50dead1bda411c88a54690dd287c&=&format=webp&width=2048&height=682',
 
   footer:
     'Any abuse with tickets will result in a ban',
-
-  teamText:
-    'The Fruity Support Team will assist you shortly,',
 
   buttons: [
     {
@@ -99,28 +94,6 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | TITLE + DESCRIPTION
-  |--------------------------------------------------------------------------
-  */
-
-  container.addTextDisplayComponents(
-    new TextDisplayBuilder().setContent(
-      `## ${NORMAL_TICKET_CONFIG.title}\n${NORMAL_TICKET_CONFIG.description}`
-    )
-  );
-
-  /*
-  |--------------------------------------------------------------------------
-  | TOP DIVIDER
-  |--------------------------------------------------------------------------
-  */
-
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
-  );
-
-  /*
-  |--------------------------------------------------------------------------
   | TICKET OPTIONS
   |--------------------------------------------------------------------------
   */
@@ -146,7 +119,7 @@ export function buildNormalTicketPanel() {
       new SectionBuilder()
         .addTextDisplayComponents(
           new TextDisplayBuilder().setContent(
-            `### ${button.emoji} ${button.label}\n${button.description}`
+            `### ${button.label}\n${button.description}`
           )
         )
         .setButtonAccessory(ticketButton);
@@ -174,19 +147,13 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | DIVIDER BEFORE IMAGE
+  | IMAGE
   |--------------------------------------------------------------------------
   */
 
   container.addSeparatorComponents(
     new SeparatorBuilder()
   );
-
-  /*
-  |--------------------------------------------------------------------------
-  | BANNER IMAGE
-  |--------------------------------------------------------------------------
-  */
 
   container.addMediaGalleryComponents(
     new MediaGalleryBuilder().addItems(
@@ -198,19 +165,13 @@ export function buildNormalTicketPanel() {
 
   /*
   |--------------------------------------------------------------------------
-  | DIVIDER BEFORE FOOTER
+  | FOOTER
   |--------------------------------------------------------------------------
   */
 
   container.addSeparatorComponents(
     new SeparatorBuilder()
   );
-
-  /*
-  |--------------------------------------------------------------------------
-  | FOOTER
-  |--------------------------------------------------------------------------
-  */
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
@@ -230,19 +191,17 @@ export function buildNormalTicketPanel() {
 |
 | We do NOT hash Discord's returned Components V2 JSON.
 |
-| This is the important part that prevents false "changed" detections
-| after a restart.
+| This prevents false "changed" detections after a restart.
 |
 */
 
 function getNormalPanelHash() {
   const panelDefinition = {
     key: NORMAL_TICKET_CONFIG.key,
-    title: NORMAL_TICKET_CONFIG.title,
-    description: NORMAL_TICKET_CONFIG.description,
+
     image: NORMAL_TICKET_CONFIG.image,
+
     footer: NORMAL_TICKET_CONFIG.footer,
-    teamText: NORMAL_TICKET_CONFIG.teamText,
 
     buttons: NORMAL_TICKET_CONFIG.buttons.map(
       (button) => ({
