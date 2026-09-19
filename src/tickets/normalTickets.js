@@ -19,7 +19,7 @@ const BRAND_COLOR = 0xF8D568;
 
 /*
 |--------------------------------------------------------------------------
-| NORMAL TICKET PANEL CONFIG
+| NORMAL TICKET CONFIG
 |--------------------------------------------------------------------------
 */
 
@@ -27,66 +27,54 @@ export const NORMAL_TICKET_CONFIG = {
   key: 'normal',
 
   channelId: '1541551721908801576',
-
   categoryId: '1542428718826524723',
-
   staffRoleId: '1541554350797619230',
 
   ticketLogsChannelId: '1542845775988391937',
-
   transcriptLogsChannelId: '1542845853310390342',
-
   reviewLogsChannelId: '1542859014499467285',
-
-  /*
-  |--------------------------------------------------------------------------
-  | IMPORTANT
-  |--------------------------------------------------------------------------
-  | Use the stable CDN URL instead of the expiring media.discordapp.net URL.
-  |
-  */
 
   image:
     'https://cdn.discordapp.com/attachments/1380169626171871282/1546404725870563368/5.jpg',
 
   footer:
-    'Any abuse with tickets will result in a ban',
+    'Any abuse will result in a ban!',
 
   buttons: [
     {
       key: 'fruity_application',
       label: 'Fruity Application',
-      description: 'Apply to join Fruity.',
-
+      description: 'Apply to join Fruity LLC.',
       emoji: {
         id: '1546395023413878836',
         name: 'Applications',
         animated: false,
       },
+      createsTicket: true,
     },
 
     {
       key: 'general_faq',
       label: 'General FAQ',
       description: 'Ask a general question about Fruity.',
-
       emoji: {
         id: '1546395162136154122',
         name: 'Questions',
         animated: false,
       },
+      createsTicket: true,
     },
 
     {
       key: 'staff_applications',
       label: 'Staff Applications',
       description: 'Apply for a staff position.',
-
       emoji: {
         id: '1546395107547156563',
         name: 'Briefcase',
         animated: true,
       },
+      createsTicket: false,
     },
   ],
 };
@@ -102,65 +90,126 @@ const NORMAL_PANEL_STORAGE_KEY =
 
 /*
 |--------------------------------------------------------------------------
-| BUILD NORMAL TICKET PANEL
+| BUILD NORMAL PANEL
 |--------------------------------------------------------------------------
 */
 
 export function buildNormalTicketPanel() {
-  const container = new ContainerBuilder();
+  const container = new ContainerBuilder()
+    .setAccentColor(BRAND_COLOR);
 
   /*
   |--------------------------------------------------------------------------
-  | TICKET OPTIONS
+  | FRUITY APPLICATION
   |--------------------------------------------------------------------------
   */
 
-  for (
-    let i = 0;
-    i < NORMAL_TICKET_CONFIG.buttons.length;
-    i++
-  ) {
-    const button =
-      NORMAL_TICKET_CONFIG.buttons[i];
+  const application =
+    NORMAL_TICKET_CONFIG.buttons.find(
+      (button) => button.key === 'fruity_application'
+    );
 
-    const ticketButton =
-      new ButtonBuilder()
-        .setCustomId(
-          `create_ticket:normal:${button.key}`
+  const applicationButton =
+    new ButtonBuilder()
+      .setCustomId(
+        'create_ticket:normal:fruity_application'
+      )
+      .setLabel(application.label)
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji(application.emoji);
+
+  container.addSectionComponents(
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `### ${application.emoji} ${application.label}\n${application.description}`
         )
-        .setLabel(button.label)
-        .setStyle(ButtonStyle.Secondary)
-        .setEmoji(button.emoji);
+      )
+      .setButtonAccessory(applicationButton)
+  );
 
-    const section =
-      new SectionBuilder()
-        .addTextDisplayComponents(
-          new TextDisplayBuilder().setContent(
-            `### ${button.label}\n${button.description}`
-          )
+  /*
+  |--------------------------------------------------------------------------
+  | LARGE DIVIDER
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+      .setSpacing(SeparatorSpacingSize.Large)
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | GENERAL FAQ
+  |--------------------------------------------------------------------------
+  */
+
+  const faq =
+    NORMAL_TICKET_CONFIG.buttons.find(
+      (button) => button.key === 'general_faq'
+    );
+
+  const faqButton =
+    new ButtonBuilder()
+      .setCustomId(
+        'create_ticket:normal:general_faq'
+      )
+      .setLabel(faq.label)
+      .setStyle(ButtonStyle.Secondary)
+      .setEmoji(faq.emoji);
+
+  container.addSectionComponents(
+    new SectionBuilder()
+      .addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          `### ${faq.emoji} ${faq.label}\n${faq.description}`
         )
-        .setButtonAccessory(ticketButton);
+      )
+      .setButtonAccessory(faqButton)
+  );
 
-    container.addSectionComponents(section);
+  /*
+  |--------------------------------------------------------------------------
+  | LARGE DIVIDER
+  |--------------------------------------------------------------------------
+  */
 
-    /*
-    |--------------------------------------------------------------------------
-    | LARGE SPACING BETWEEN OPTIONS
-    |--------------------------------------------------------------------------
-    */
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+      .setSpacing(SeparatorSpacingSize.Large)
+  );
 
-    if (
-      i <
-      NORMAL_TICKET_CONFIG.buttons.length - 1
-    ) {
-      container.addSeparatorComponents(
-        new SeparatorBuilder()
-          .setSpacing(
-            SeparatorSpacingSize.Large
-          )
-      );
-    }
-  }
+  /*
+  |--------------------------------------------------------------------------
+  | STAFF APPLICATIONS
+  |--------------------------------------------------------------------------
+  |
+  | NO TICKET BUTTON.
+  |
+  */
+
+  const staff =
+    NORMAL_TICKET_CONFIG.buttons.find(
+      (button) => button.key === 'staff_applications'
+    );
+
+  container.addTextDisplayComponents(
+    new TextDisplayBuilder().setContent(
+      `### ${staff.emoji} ${staff.label}\n${staff.description}\n\n**Use \`/applications\` to apply for a staff position.**`
+    )
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | LARGE DIVIDER
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
+      .setSpacing(SeparatorSpacingSize.Large)
+  );
 
   /*
   |--------------------------------------------------------------------------
@@ -168,17 +217,21 @@ export function buildNormalTicketPanel() {
   |--------------------------------------------------------------------------
   */
 
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
-  );
-
   container.addMediaGalleryComponents(
     new MediaGalleryBuilder().addItems(
       new MediaGalleryItemBuilder()
-        .setURL(
-          NORMAL_TICKET_CONFIG.image
-        )
+        .setURL(NORMAL_TICKET_CONFIG.image)
     )
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | FOOTER DIVIDER
+  |--------------------------------------------------------------------------
+  */
+
+  container.addSeparatorComponents(
+    new SeparatorBuilder()
   );
 
   /*
@@ -186,10 +239,6 @@ export function buildNormalTicketPanel() {
   | FOOTER
   |--------------------------------------------------------------------------
   */
-
-  container.addSeparatorComponents(
-    new SeparatorBuilder()
-  );
 
   container.addTextDisplayComponents(
     new TextDisplayBuilder().setContent(
@@ -202,16 +251,15 @@ export function buildNormalTicketPanel() {
 
 /*
 |--------------------------------------------------------------------------
-| PANEL CONFIG HASH
+| PANEL HASH
 |--------------------------------------------------------------------------
 */
 
 function getNormalPanelHash() {
   const panelDefinition = {
+    version: 3,
     key: NORMAL_TICKET_CONFIG.key,
-
     image: NORMAL_TICKET_CONFIG.image,
-
     footer: NORMAL_TICKET_CONFIG.footer,
 
     buttons:
@@ -221,21 +269,20 @@ function getNormalPanelHash() {
           label: button.label,
           description: button.description,
           emoji: button.emoji,
+          createsTicket: button.createsTicket,
         })
       ),
   };
 
   return crypto
     .createHash('sha256')
-    .update(
-      JSON.stringify(panelDefinition)
-    )
+    .update(JSON.stringify(panelDefinition))
     .digest('hex');
 }
 
 /*
 |--------------------------------------------------------------------------
-| DATABASE HELPERS
+| DATABASE
 |--------------------------------------------------------------------------
 */
 
@@ -302,7 +349,7 @@ async function saveNormalPanelStorage(
 
 /*
 |--------------------------------------------------------------------------
-| CHECK IF MESSAGE IS NORMAL TICKET PANEL
+| CHECK PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -311,20 +358,16 @@ function isNormalTicketPanel(
   client
 ) {
   try {
-    if (!message) {
-      return false;
-    }
+    if (!message) return false;
 
     if (
-      message.author?.id !==
-      client.user.id
+      message.author?.id !== client.user.id
     ) {
       return false;
     }
 
     if (
-      !message.components ||
-      !message.components.length
+      !message.components?.length
     ) {
       return false;
     }
@@ -333,8 +376,7 @@ function isNormalTicketPanel(
       JSON.stringify(
         message.components.map(
           (component) =>
-            typeof component?.toJSON ===
-            'function'
+            typeof component?.toJSON === 'function'
               ? component.toJSON()
               : component
         )
@@ -350,7 +392,7 @@ function isNormalTicketPanel(
 
 /*
 |--------------------------------------------------------------------------
-| FIND EXISTING NORMAL PANEL
+| FIND EXISTING PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -385,7 +427,7 @@ async function findExistingNormalPanel(
 
 /*
 |--------------------------------------------------------------------------
-| GET STORED NORMAL PANEL MESSAGE
+| STORED PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -426,23 +468,7 @@ async function getStoredNormalPanelMessage(
 
 /*
 |--------------------------------------------------------------------------
-| RECONCILE NORMAL PANEL
-|--------------------------------------------------------------------------
-|
-| Behavior:
-|
-| SAME CONFIG:
-|   Do absolutely nothing.
-|
-| CONFIG CHANGED:
-|   Edit the existing panel.
-|
-| STORED MESSAGE DELETED:
-|   Search for an existing panel before creating.
-|
-| NO PANEL:
-|   Create exactly one panel.
-|
+| RECONCILE PANEL
 |--------------------------------------------------------------------------
 */
 
@@ -460,12 +486,6 @@ export async function reconcileNormalTicketPanel(
       '[Normal Tickets] Discord client is not ready yet.'
     );
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | GET CHANNEL
-  |--------------------------------------------------------------------------
-  */
 
   const channel =
     await client.channels
@@ -493,35 +513,20 @@ export async function reconcileNormalTicketPanel(
     );
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | BUILD PANEL
-  |--------------------------------------------------------------------------
-  */
-
   const container =
     buildNormalTicketPanel();
 
   const panelHash =
     getNormalPanelHash();
 
-  /*
-  |--------------------------------------------------------------------------
-  | COMPONENTS V2 PAYLOAD
-  |--------------------------------------------------------------------------
-  */
-
   const payload = {
     components: [container],
-
-    flags:
-      MessageFlags.IsComponentsV2,
+    flags: MessageFlags.IsComponentsV2,
   };
 
   /*
   |--------------------------------------------------------------------------
-  | STEP 1
-  | CHECK STORED MESSAGE
+  | STORED MESSAGE
   |--------------------------------------------------------------------------
   */
 
@@ -536,12 +541,6 @@ export async function reconcileNormalTicketPanel(
       message,
       storage,
     } = storedResult;
-
-    /*
-    |--------------------------------------------------------------------------
-    | NOTHING CHANGED
-    |--------------------------------------------------------------------------
-    */
 
     if (
       storage.configHash ===
@@ -561,19 +560,11 @@ export async function reconcileNormalTicketPanel(
       };
     }
 
-    /*
-    |--------------------------------------------------------------------------
-    | CONFIG CHANGED
-    |--------------------------------------------------------------------------
-    */
-
     try {
-      await message.edit(
-        payload
-      );
+      await message.edit(payload);
     } catch (error) {
       console.error(
-        '[Normal Tickets] Failed to edit existing panel:',
+        '[Normal Tickets] Failed to edit panel:',
         error
       );
 
@@ -612,12 +603,8 @@ export async function reconcileNormalTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | STEP 2
-  | STORED MESSAGE DOES NOT EXIST
+  | SEARCH BEFORE CREATING
   |--------------------------------------------------------------------------
-  |
-  | Search the channel before sending another one.
-  |
   */
 
   const existing =
@@ -655,8 +642,7 @@ export async function reconcileNormalTicketPanel(
 
   /*
   |--------------------------------------------------------------------------
-  | STEP 3
-  | SEND NEW PANEL
+  | CREATE
   |--------------------------------------------------------------------------
   */
 
@@ -664,24 +650,11 @@ export async function reconcileNormalTicketPanel(
 
   try {
     message =
-      await channel.send(
-        payload
-      );
+      await channel.send(payload);
   } catch (error) {
     console.error(
-      '=================================================='
-    );
-
-    console.error(
-      '[Normal Tickets] PANEL SEND FAILED'
-    );
-
-    console.error(
+      '[Normal Tickets] PANEL SEND FAILED:',
       error
-    );
-
-    console.error(
-      '=================================================='
     );
 
     throw new Error(
@@ -690,12 +663,6 @@ export async function reconcileNormalTicketPanel(
       }`
     );
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | SAVE PANEL ID
-  |--------------------------------------------------------------------------
-  */
 
   await saveNormalPanelStorage(
     client,
@@ -725,7 +692,7 @@ export async function reconcileNormalTicketPanel(
 
 /*
 |--------------------------------------------------------------------------
-| GET NORMAL TICKET TYPE
+| GET TICKET TYPE
 |--------------------------------------------------------------------------
 */
 
@@ -739,12 +706,6 @@ export function getNormalTicketType(
     ) || null
   );
 }
-
-/*
-|--------------------------------------------------------------------------
-| BRAND COLOR
-|--------------------------------------------------------------------------
-*/
 
 export const NORMAL_TICKET_BRAND_COLOR =
   BRAND_COLOR;
