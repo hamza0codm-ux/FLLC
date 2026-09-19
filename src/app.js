@@ -28,6 +28,10 @@ import {
 import { reconcileSocialsPanel } from './services/socialsPanelService.js';
 import { initializeMusic } from './services/music/riffySetup.js';
 import { shutdownMusic } from './services/music/playerHandler.js';
+
+import { reconcileNormalTicketPanel } from './tickets/normalTickets.js';
+import { reconcileMerchTicketPanel } from './tickets/merchTickets.js';
+
 import pkg from '../package.json' with { type: 'json' };
 import {
     EXPECTED_SCHEMA_VERSION,
@@ -57,7 +61,9 @@ class TitanBot extends Client {
         this.modals = new Collection();
         this.cooldowns = new Collection();
         this.db = null;
-        this.rest = new REST({ version: '10' }).setToken(config.bot.token);
+        this.rest = new REST({ version: '10' }).setToken(
+            config.bot.token,
+        );
     }
 
     async start() {
@@ -66,6 +72,7 @@ class TitanBot extends Client {
             await new Promise(resolve => setTimeout(resolve, 1000));
 
             startupLog('Initializing database...');
+
             const dbInstance = await initializeDatabase();
             this.db = dbInstance.db;
 
@@ -119,24 +126,117 @@ class TitanBot extends Client {
             await this.login(this.config.bot.token);
             startupLog('Discord login successful');
 
-            // Automatically create/check the Fruity Absence panel.
+            /*
+             * ============================================================
+             * FRUITY NORMAL TICKET PANEL
+             * ============================================================
+             */
+
+            try {
+                startupLog('Checking Fruity Normal Ticket panel...');
+
+                const normalTicketResult =
+                    await reconcileNormalTicketPanel(this);
+
+                if (normalTicketResult?.action === 'created') {
+                    startupLog(
+                        `✅ Fruity Normal Ticket panel created (${normalTicketResult.messageId})`,
+                    );
+                } else if (
+                    normalTicketResult?.action === 'updated'
+                ) {
+                    startupLog(
+                        `✅ Fruity Normal Ticket panel updated (${normalTicketResult.messageId})`,
+                    );
+                } else if (
+                    normalTicketResult?.action === 'unchanged'
+                ) {
+                    startupLog(
+                        `✅ Fruity Normal Ticket panel already exists (${normalTicketResult.messageId})`,
+                    );
+                } else {
+                    logger.warn(
+                        `⚠️ Fruity Normal Ticket panel returned an unexpected result: ${JSON.stringify(
+                            normalTicketResult,
+                        )}`,
+                    );
+                }
+            } catch (error) {
+                logger.error(
+                    '❌ Failed to create/update Fruity Normal Ticket panel:',
+                    error,
+                );
+            }
+
+            /*
+             * ============================================================
+             * FRUITY MERCH TICKET PANEL
+             * ============================================================
+             */
+
+            try {
+                startupLog('Checking Fruity Merch Ticket panel...');
+
+                const merchTicketResult =
+                    await reconcileMerchTicketPanel(this);
+
+                if (merchTicketResult?.action === 'created') {
+                    startupLog(
+                        `✅ Fruity Merch Ticket panel created (${merchTicketResult.messageId})`,
+                    );
+                } else if (
+                    merchTicketResult?.action === 'updated'
+                ) {
+                    startupLog(
+                        `✅ Fruity Merch Ticket panel updated (${merchTicketResult.messageId})`,
+                    );
+                } else if (
+                    merchTicketResult?.action === 'unchanged'
+                ) {
+                    startupLog(
+                        `✅ Fruity Merch Ticket panel already exists (${merchTicketResult.messageId})`,
+                    );
+                } else {
+                    logger.warn(
+                        `⚠️ Fruity Merch Ticket panel returned an unexpected result: ${JSON.stringify(
+                            merchTicketResult,
+                        )}`,
+                    );
+                }
+            } catch (error) {
+                logger.error(
+                    '❌ Failed to create/update Fruity Merch Ticket panel:',
+                    error,
+                );
+            }
+
+            /*
+             * ============================================================
+             * ABSENCE PANEL
+             * ============================================================
+             */
+
             try {
                 startupLog('Checking Fruity Absence panel...');
 
-                const absenceResult = await reconcileAbsencePanel(this);
+                const absenceResult =
+                    await reconcileAbsencePanel(this);
 
                 if (absenceResult.action === 'created') {
                     startupLog(
                         `✅ Fruity Absence panel created (${absenceResult.messageId})`,
                     );
-                } else if (absenceResult.action === 'unchanged') {
+                } else if (
+                    absenceResult.action === 'unchanged'
+                ) {
                     startupLog(
                         `✅ Fruity Absence panel already exists (${absenceResult.messageId})`,
                     );
                 } else {
                     logger.error(
                         `❌ Failed to reconcile Fruity Absence panel: ${
-                            absenceResult.error || 'Unknown error'
+                            absenceResult.error ||
+                            'Unknown error'
                         }`,
                     );
                 }
@@ -147,24 +247,33 @@ class TitanBot extends Client {
                 );
             }
 
-            // Automatically create/check the Fruity Socials panel.
+            /*
+             * ============================================================
+             * SOCIALS PANEL
+             * ============================================================
+             */
+
             try {
                 startupLog('Checking Fruity Socials panel...');
 
-                const socialsResult = await reconcileSocialsPanel(this);
+                const socialsResult =
+                    await reconcileSocialsPanel(this);
 
                 if (socialsResult.action === 'created') {
                     startupLog(
                         `✅ Fruity Socials panel created (${socialsResult.messageId})`,
                     );
-                } else if (socialsResult.action === 'unchanged') {
+                } else if (
+                    socialsResult.action === 'unchanged'
+                ) {
                     startupLog(
                         `✅ Fruity Socials panel already exists (${socialsResult.messageId})`,
                     );
                 } else {
                     logger.error(
                         `❌ Failed to reconcile Fruity Socials panel: ${
-                            socialsResult.error || 'Unknown error'
+                            socialsResult.error ||
+                            'Unknown error'
                         }`,
                     );
                 }
@@ -176,8 +285,12 @@ class TitanBot extends Client {
             }
 
             startupLog('Registering slash commands globally...');
+
             await this.registerCommands();
-            startupLog('Slash commands registration complete');
+
+            startupLog(
+                'Slash commands registration complete',
+            );
 
             const databaseMode = dbStatus.isDegraded
                 ? 'Optional in-memory mode (data resets after restart)'
@@ -200,7 +313,9 @@ class TitanBot extends Client {
         const app = express();
 
         const configuredPort = Number(
-            this.config.api?.port || process.env.PORT || 3000,
+            this.config.api?.port ||
+                process.env.PORT ||
+                3000,
         );
 
         const maxPortRetryAttempts = Number(
@@ -208,7 +323,8 @@ class TitanBot extends Client {
         );
 
         const host = process.env.WEB_HOST || '0.0.0.0';
-        const corsOrigin = this.config.api?.cors?.origin || '*';
+        const corsOrigin =
+            this.config.api?.cors?.origin || '*';
 
         app.use((req, res, next) => {
             const allowedOrigins = Array.isArray(corsOrigin)
@@ -245,8 +361,10 @@ class TitanBot extends Client {
         });
 
         const requestCounts = new Map();
+
         const windowMs =
-            this.config.api?.rateLimit?.windowMs || 60000;
+            this.config.api?.rateLimit?.windowMs ||
+            60000;
 
         const maxRequests =
             this.config.api?.rateLimit?.max || 100;
@@ -267,7 +385,9 @@ class TitanBot extends Client {
             if (times.length >= maxRequests) {
                 return res
                     .status(429)
-                    .json({ error: 'Too many requests' });
+                    .json({
+                        error: 'Too many requests',
+                    });
             }
 
             times.push(now);
@@ -289,148 +409,251 @@ class TitanBot extends Client {
                 database: {
                     connected:
                         dbStatus.connectionType !== 'none',
-                    degraded: dbStatus.isDegraded,
-                    type: dbStatus.connectionType,
+                    connectionType:
+                        dbStatus.connectionType,
+                    degraded:
+                        dbStatus.isDegraded,
+                },
+                discord: {
+                    ready: this.isReady(),
+                    guilds: this.guilds.cache.size,
+                },
+                version: pkg.version,
+                schema: {
+                    expectedVersion:
+                        EXPECTED_SCHEMA_VERSION,
+                    expectedLabel:
+                        EXPECTED_SCHEMA_LABEL,
                 },
             };
 
-            res.status(200).json(status);
+            res.json(status);
         });
 
-        app.get('/ready', (req, res) => {
+        app.get('/api/status', (req, res) => {
             const dbStatus =
                 this.db?.getStatus?.() || {
-                    isDegraded: true,
-                    connectionType: 'none',
+                    isDegraded: 'unknown',
+                    connectionType: 'unknown',
                 };
 
-            const isReady =
-                this.isReady() && !dbStatus.isDegraded;
-
-            const metrics = {
-                guildCount:
-                    this.guilds?.cache?.size ?? 0,
-
-                commandCount:
-                    this.commands?.size ?? 0,
-
+            res.json({
+                online: this.isReady(),
+                guilds: this.guilds.cache.size,
+                users: this.guilds.cache.reduce(
+                    (total, guild) =>
+                        total + guild.memberCount,
+                    0,
+                ),
                 database: {
-                    mode: dbStatus.connectionType,
-                    degraded: dbStatus.isDegraded,
-                    degradedReason:
-                        dbStatus.degradedReason ?? null,
+                    connectionType:
+                        dbStatus.connectionType,
+                    degraded:
+                        dbStatus.isDegraded,
                 },
+                uptime: process.uptime(),
+                version: pkg.version,
+            });
+        });
 
-                schemaVersion: EXPECTED_SCHEMA_VERSION,
-                schemaLabel: EXPECTED_SCHEMA_LABEL,
-            };
-
-            if (isReady) {
-                return res.status(200).json({
-                    ready: true,
-                    message: 'Bot is ready',
-                    metrics,
-                });
+        app.get('/api/guilds', (req, res) => {
+            if (!this.isReady()) {
+                return res
+                    .status(503)
+                    .json({
+                        error: 'Discord client is not ready',
+                    });
             }
 
-            res.status(503).json({
-                ready: false,
-                reason: !this.isReady()
-                    ? 'Bot not Ready'
-                    : 'Database degraded',
-                metrics,
-            });
+            const guilds = this.guilds.cache.map(
+                guild => ({
+                    id: guild.id,
+                    name: guild.name,
+                    memberCount:
+                        guild.memberCount,
+                    icon: guild.iconURL({
+                        size: 128,
+                    }),
+                }),
+            );
+
+            res.json(guilds);
         });
 
-        app.get('/', (req, res) => {
-            res.status(200).json({
-                message: 'TitanBot System Online',
-                version: pkg.version,
-                timestamp: new Date().toISOString(),
-            });
+        app.get('/api/guilds/:guildId', async (req, res) => {
+            try {
+                if (!this.isReady()) {
+                    return res
+                        .status(503)
+                        .json({
+                            error: 'Discord client is not ready',
+                        });
+                }
+
+                const guild =
+                    this.guilds.cache.get(
+                        req.params.guildId,
+                    );
+
+                if (!guild) {
+                    return res
+                        .status(404)
+                        .json({
+                            error: 'Guild not found',
+                        });
+                }
+
+                const guildConfig =
+                    await getGuildConfig(
+                        this,
+                        guild.id,
+                    );
+
+                res.json({
+                    id: guild.id,
+                    name: guild.name,
+                    memberCount:
+                        guild.memberCount,
+                    icon: guild.iconURL({
+                        size: 256,
+                    }),
+                    config: guildConfig,
+                });
+            } catch (error) {
+                logger.error(
+                    'Error fetching guild information:',
+                    error,
+                );
+
+                res.status(500).json({
+                    error: 'Failed to fetch guild information',
+                });
+            }
         });
 
-        const startServer = (port, attempt = 0) => {
-            let hasStartedListening = false;
+        let currentPort = configuredPort;
+        let attempt = 0;
 
-            const server = app.listen(
-                port,
-                host,
-                () => {
-                    hasStartedListening = true;
+        const tryListen = () => {
+            attempt++;
+
+            const server = app
+                .listen(currentPort, host, () => {
                     this.webServer = server;
 
                     startupLog(
-                        `✅ Web Server running on ${host}:${port}`,
+                        `Web server listening on ${host}:${currentPort}`,
                     );
+                })
+                .on('error', error => {
+                    if (
+                        error.code === 'EADDRINUSE' &&
+                        attempt <
+                            maxPortRetryAttempts
+                    ) {
+                        logger.warn(
+                            `Port ${currentPort} is already in use. Trying another port...`,
+                        );
 
-                    startupLog(
-                        `Health endpoint: http://${host}:${port}/health`,
-                    );
+                        currentPort++;
 
-                    startupLog(
-                        `Ready endpoint: http://${host}:${port}/ready`,
-                    );
-                },
-            );
-
-            server.on('error', error => {
-                const errorCode =
-                    error?.code || 'UNKNOWN_ERROR';
-
-                const errorMessage =
-                    error?.message || 'Unknown server error';
-
-                if (
-                    !hasStartedListening &&
-                    errorCode === 'EADDRINUSE' &&
-                    attempt < maxPortRetryAttempts
-                ) {
-                    const nextPort = port + 1;
-
-                    startupLog(
-                        `Port ${port} is already in use. Trying port ${nextPort}...`,
-                    );
-
-                    setTimeout(
-                        () =>
-                            startServer(
-                                nextPort,
-                                attempt + 1,
-                            ),
-                        250,
-                    );
-
-                    return;
-                }
-
-                if (
-                    hasStartedListening &&
-                    errorCode === 'EADDRINUSE'
-                ) {
-                    logger.warn(
-                        `Web server reported a duplicate bind warning on ${host}:${port}, but the bot remains online.`,
-                    );
-
-                    return;
-                }
-
-                logger.error(
-                    `❌ Web server error on port ${port} (${errorCode}): ${errorMessage}`,
-                );
-
-                if (!hasStartedListening) {
-                    process.exit(1);
-                }
-            });
+                        setTimeout(
+                            tryListen,
+                            500,
+                        );
+                    } else {
+                        logger.error(
+                            'Failed to start web server:',
+                            error,
+                        );
+                    }
+                });
         };
 
-        startServer(configuredPort, 0);
+        tryListen();
+    }
+
+    async loadHandlers() {
+        startupLog('Loading handlers...');
+
+        const handlers = [
+            {
+                path: 'events',
+                type: 'default',
+                required: true,
+            },
+            {
+                path: 'interactions',
+                type: 'default',
+                required: true,
+            },
+        ];
+
+        for (const handler of handlers) {
+            try {
+                startupLog(
+                    `Loading handler: ${handler.path}`,
+                );
+
+                const module = await import(
+                    `./handlers/loaders/${handler.path}.js`
+                );
+
+                const loaderFn =
+                    handler.type.startsWith('named:')
+                        ? module[
+                              handler.type.split(':')[1]
+                          ]
+                        : module.default;
+
+                if (typeof loaderFn === 'function') {
+                    await loaderFn(this);
+
+                    startupLog(
+                        `✅ Loaded ${handler.path}`,
+                    );
+                } else {
+                    throw new Error(
+                        `Invalid loader export from ${handler.path}`,
+                    );
+                }
+            } catch (error) {
+                if (handler.required) {
+                    logger.error(
+                        `❌ Failed to load required handler ${handler.path}:`,
+                        error.message,
+                    );
+
+                    throw error;
+                } else if (
+                    error.code !== 'MODULE_NOT_FOUND'
+                ) {
+                    logger.warn(
+                        `⚠️ Failed to load optional handler ${handler.path}:`,
+                        error.message,
+                    );
+                }
+            }
+        }
+    }
+
+    async registerCommands() {
+        try {
+            await registerSlashCommands(this, {
+                clientId:
+                    this.config.bot.clientId,
+            });
+        } catch (error) {
+            logger.error(
+                'Error registering commands:',
+                error,
+            );
+        }
     }
 
     setupCronJobs() {
         cron.schedule(
-            '0 6 * * *',
+            '0 0 * * *',
             runSafeTask(
                 'birthday_check',
                 () => checkBirthdays(this),
@@ -495,7 +718,9 @@ class TitanBot extends Client {
                                 counter,
                             );
                         } else {
-                            orphanedCounters.push(counter);
+                            orphanedCounters.push(
+                                counter,
+                            );
 
                             logger.info(
                                 `Removing orphaned counter ${counter.id} (type: ${counter.type}, deleted channel: ${counter.channelId}) from guild ${guildId}`,
@@ -504,7 +729,6 @@ class TitanBot extends Client {
                     }
                 }
 
-                // Save cleaned counters if any were orphaned
                 if (orphanedCounters.length > 0) {
                     await saveServerCounters(
                         this,
@@ -525,100 +749,18 @@ class TitanBot extends Client {
         }
     }
 
-    async loadHandlers() {
-        startupLog('Loading handlers...');
-
-        const handlers = [
-            {
-                path: 'events',
-                type: 'default',
-                required: true,
-            },
-            {
-                path: 'interactions',
-                type: 'default',
-                required: true,
-            },
-        ];
-
-        for (const handler of handlers) {
-            try {
-                startupLog(
-                    `Loading handler: ${handler.path}`,
-                );
-
-                const module = await import(
-                    `./handlers/loaders/${handler.path}.js`
-                );
-
-                const loaderFn = handler.type.startsWith(
-                    'named:',
-                )
-                    ? module[
-                          handler.type.split(':')[1]
-                      ]
-                    : module.default;
-
-                if (typeof loaderFn === 'function') {
-                    await loaderFn(this);
-
-                    startupLog(
-                        `✅ Loaded ${handler.path}`,
-                    );
-                } else {
-                    throw new Error(
-                        `Invalid loader export from ${handler.path}`,
-                    );
-                }
-            } catch (error) {
-                if (handler.required) {
-                    logger.error(
-                        `❌ Failed to load required handler ${handler.path}:`,
-                        error.message,
-                    );
-
-                    throw error;
-                } else if (
-                    error.code !== 'MODULE_NOT_FOUND'
-                ) {
-                    logger.warn(
-                        `⚠️ Failed to load optional handler ${handler.path}:`,
-                        error.message,
-                    );
-                }
-            }
-        }
-    }
-
-    async registerCommands() {
-        try {
-            await registerSlashCommands(this, {
-                clientId: this.config.bot.clientId,
-            });
-        } catch (error) {
-            logger.error(
-                'Error registering commands:',
-                error,
-            );
-        }
-    }
-
     async shutdown(reason = 'UNKNOWN') {
         shutdownLog(
             `Bot is shutting down (${reason})...`,
         );
 
-        logger.info(
-            `\n${'='.repeat(60)}`,
-        );
+        logger.info(`\n${'='.repeat(60)}`);
 
         logger.info(
             `🛑 Graceful Shutdown Initiated (${reason})`,
         );
 
-        logger.info(
-            `${'='.repeat(60)}`,
-        );
+        logger.info(`${'='.repeat(60)}`);
 
         try {
             logger.info('Stopping cron jobs...');
@@ -653,7 +795,6 @@ class TitanBot extends Client {
                 );
             }
 
-            // Close database connection
             if (this.db && this.db.db) {
                 logger.info(
                     'Closing database connection...',
@@ -767,8 +908,6 @@ try {
                     return;
                 }
 
-                // A stray rejection is a bug to fix, not a reason to take the bot down.
-                // Log loudly with full context; the central task handler categorizes it.
                 handleTaskError(
                     'unhandled_rejection',
                     reason instanceof Error
