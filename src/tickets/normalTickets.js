@@ -90,7 +90,7 @@ export const NORMAL_TICKET_CONFIG = {
         'Apply for a staff position. **Use** **`/applications`** **to apply for a staff position.**',
 
       emoji: {
-        id: '1546395107547156563',
+        id: '1546395162136154122',
         name: 'Briefcase',
         animated: true,
       },
