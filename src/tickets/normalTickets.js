@@ -59,7 +59,6 @@ export const NORMAL_TICKET_CONFIG = {
         animated: false,
       },
 
-      // This option creates a ticket.
       createsTicket: true,
     },
 
@@ -77,7 +76,6 @@ export const NORMAL_TICKET_CONFIG = {
         animated: false,
       },
 
-      // This option creates a ticket.
       createsTicket: true,
     },
 
@@ -115,27 +113,6 @@ const NORMAL_PANEL_STORAGE_KEY =
 |--------------------------------------------------------------------------
 | EMOJI TEXT HELPER
 |--------------------------------------------------------------------------
-|
-| Discord.js emoji configuration objects become "[object Object]" when
-| directly inserted into a string.
-|
-| This converts:
-|
-| {
-|   id: '123',
-|   name: 'Applications',
-|   animated: false
-| }
-|
-| into:
-|
-| <:Applications:123>
-|
-| or for animated emojis:
-|
-| <a:Applications:123>
-|
-|--------------------------------------------------------------------------
 */
 
 function emojiToText(emoji) {
@@ -143,21 +120,9 @@ function emojiToText(emoji) {
     return '';
   }
 
-  /*
-  |--------------------------------------------------------------------------
-  | Already formatted emoji string
-  |--------------------------------------------------------------------------
-  */
-
   if (typeof emoji === 'string') {
     return emoji;
   }
-
-  /*
-  |--------------------------------------------------------------------------
-  | Discord emoji object
-  |--------------------------------------------------------------------------
-  */
 
   if (
     typeof emoji === 'object' &&
@@ -207,20 +172,6 @@ export function buildNormalTicketPanel() {
     const emojiText =
       emojiToText(button.emoji);
 
-    /*
-    |--------------------------------------------------------------------------
-    | BUILD SECTION TEXT
-    |--------------------------------------------------------------------------
-    |
-    | IMPORTANT:
-    | Never do:
-    |
-    | `${button.emoji} ${button.label}`
-    |
-    | because that produces "[object Object]".
-    |
-    */
-
     const sectionText =
       emojiText
         ? `### ${emojiText} ${button.label}\n${button.description}`
@@ -228,28 +179,23 @@ export function buildNormalTicketPanel() {
 
     /*
     |--------------------------------------------------------------------------
-    | BUILD SECTION
-    |--------------------------------------------------------------------------
-    */
-
-    const section =
-      new SectionBuilder().addTextDisplayComponents(
-        new TextDisplayBuilder().setContent(
-          sectionText
-        )
-      );
-
-    /*
-    |--------------------------------------------------------------------------
-    | ONLY CREATE BUTTONS FOR TICKET OPTIONS
+    | OPTIONS WITH TICKET BUTTONS
     |--------------------------------------------------------------------------
     |
-    | Staff Applications intentionally has NO button.
-    | Users are told to use /applications instead.
+    | SectionBuilder REQUIRES an accessory.
+    | Therefore only use SectionBuilder when a button
+    | actually exists.
     |
     */
 
     if (button.createsTicket) {
+      const section =
+        new SectionBuilder().addTextDisplayComponents(
+          new TextDisplayBuilder().setContent(
+            sectionText
+          )
+        );
+
       const ticketButton =
         new ButtonBuilder()
           .setCustomId(
@@ -282,17 +228,29 @@ export function buildNormalTicketPanel() {
       section.setButtonAccessory(
         ticketButton
       );
+
+      container.addSectionComponents(
+        section
+      );
+    } else {
+      /*
+      |--------------------------------------------------------------------------
+      | OPTIONS WITHOUT BUTTONS
+      |--------------------------------------------------------------------------
+      |
+      | A SectionBuilder cannot be used here because it
+      | would have no accessory.
+      |
+      | Staff Applications uses /applications instead.
+      |
+      */
+
+      container.addTextDisplayComponents(
+        new TextDisplayBuilder().setContent(
+          sectionText
+        )
+      );
     }
-
-    /*
-    |--------------------------------------------------------------------------
-    | ADD SECTION
-    |--------------------------------------------------------------------------
-    */
-
-    container.addSectionComponents(
-      section
-    );
 
     /*
     |--------------------------------------------------------------------------
@@ -371,7 +329,7 @@ export function buildNormalTicketPanel() {
 
 function getNormalPanelHash() {
   const panelDefinition = {
-    version: 4,
+    version: 5,
 
     key:
       NORMAL_TICKET_CONFIG.key,
@@ -612,20 +570,6 @@ async function getStoredNormalPanelMessage(
 /*
 |--------------------------------------------------------------------------
 | RECONCILE NORMAL PANEL
-|--------------------------------------------------------------------------
-|
-| SAME CONFIG:
-|   Do nothing.
-|
-| CONFIG CHANGED:
-|   Edit the existing panel.
-|
-| STORED MESSAGE DELETED:
-|   Search for an existing panel.
-|
-| NO PANEL:
-|   Create exactly one panel.
-|
 |--------------------------------------------------------------------------
 */
 
